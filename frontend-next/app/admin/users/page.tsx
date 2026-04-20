@@ -34,7 +34,7 @@ export default function AdminUsers() {
   const bulkDelete = () => {
     if (!selected.length) return
     setConfirm({ isOpen: true, type: 'danger', title: '批量删除', message: `确定要删除 ${selected.length} 个用户吗？`, onConfirm: async () => {
-      for (const id of selected) await api.delete(`/admin/users/${id}`)
+      await Promise.all(selected.map(id => api.delete(`/admin/users/${id}`)))
       fetchUsers(); setConfirm({ isOpen: false })
     }})
   }

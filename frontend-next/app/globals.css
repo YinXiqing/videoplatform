@@ -20,15 +20,3 @@ button, a, [role="button"], select, label[for], input[type="checkbox"], input[ty
 body {
   @apply bg-gray-50 text-gray-900;
 }
-
-.btn-primary {
-  @apply bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors;
-}
-
-.btn-secondary {
-  @apply bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors;
-}
-
-.card {
-  @apply bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden;
-}

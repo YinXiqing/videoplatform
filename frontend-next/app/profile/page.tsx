@@ -2,8 +2,7 @@
 import { RequireAuth } from '@/components/AuthGuard'
 import { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
-
-type Toast = { msg: string; type: 'success' | 'error' } | null
+import Toast from '@/components/Toast'
 
 export default function Profile() {
   const { user, updateProfile } = useAuth()
@@ -11,11 +10,9 @@ export default function Profile() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [toast, setToast] = useState<Toast>(null)
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
-  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
-    setToast({ msg, type }); setTimeout(() => setToast(null), 3000)
-  }
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type })
 
   const handleEmail = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true)
@@ -67,7 +64,7 @@ export default function Profile() {
           </form>
         </div>
       </div>
-      {toast && <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl shadow-lg text-white text-sm font-medium ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>{toast.msg}</div>}
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
     </RequireAuth>
   )

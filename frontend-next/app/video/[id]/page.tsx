@@ -1,40 +1,30 @@
-'use client'
-import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
-import VideoPlayer from '@/components/VideoPlayer'
-import api from '@/lib/api'
+import { serverFetch } from '@/lib/server-api'
+import VideoDetailClient from './client'
 import type { Video } from '@/types'
+import type { Metadata } from 'next'
 
-export default function VideoDetail() {
-  const { id } = useParams<{ id: string }>()
-  const [video, setVideo] = useState<Video | null>(null)
-  const [notFound, setNotFound] = useState(false)
+async function getVideo(id: string): Promise<Video | null> {
+  try {
+    const res = await serverFetch(`/api/video/detail/${id}`)
+    if (!res.ok) return null
+    return (await res.json()).video
+  } catch { return null }
+}
 
-  useEffect(() => {
-    api.get(`/video/detail/${id}`)
-      .then(r => setVideo(r.data.video))
-      .catch(() => setNotFound(true))
-  }, [id])
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params
+  const video = await getVideo(id)
+  return { title: video ? `${video.title} - 视频平台` : '视频详情 - 视频平台' }
+}
 
-  if (notFound) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">视频未找到</h2>
-        <a href="/" className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700">返回首页</a>
-      </div>
-    </div>
-  )
-
-  if (!video) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  )
-
+export default async function VideoDetail({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const video = await getVideo(id)
+  // SSR 获取不到（pending/rejected 需要鉴权）时降级为客户端渲染
   return (
     <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
       <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
-        <VideoPlayer video={video} />
+        <VideoDetailClient id={id} initialVideo={video} />
       </div>
     </div>
   )

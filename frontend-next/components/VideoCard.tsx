@@ -1,24 +1,20 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, memo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import type { Video } from '@/types'
 
 declare global { interface Window { Hls: any } }
 
-interface VideoCardProps {
+function VideoCard({ video, formatViews, formatDuration, priority = false }: {
   video: Video
-  hoveredVideo: number | null
-  setHoveredVideo: (id: number | null) => void
   formatViews?: (v: number) => string
   formatDuration?: (s: number) => string
   priority?: boolean
-}
-
-export default function VideoCard({ video, hoveredVideo, setHoveredVideo, formatViews, formatDuration, priority = false }: VideoCardProps) {
+}) {
   const [imgError, setImgError] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
   const [videoReady, setVideoReady] = useState(false)
-  const isHovered = hoveredVideo === video.id
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<any>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -59,22 +55,15 @@ export default function VideoCard({ video, hoveredVideo, setHoveredVideo, format
         document.head.appendChild(s)
       }
     }
-    timer.current = setTimeout(() => setHoveredVideo(video.id), 150)
+    timer.current = setTimeout(() => setIsHovered(true), 150)
   }
 
   const handleLeave = () => {
     if (timer.current) clearTimeout(timer.current)
-    setHoveredVideo(null)
+    setIsHovered(false)
     setVideoReady(false)
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
   }
-
-  useEffect(() => {
-    if (!isHovered) {
-      setVideoReady(false)
-      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
-    }
-  }, [isHovered])
 
   const coverSrc = video.is_scraped && video.cover_image?.startsWith('http')
     ? video.cover_image
@@ -85,14 +74,12 @@ export default function VideoCard({ video, hoveredVideo, setHoveredVideo, format
       onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
       <Link href={`/video/${video.id}`}>
         <div className="relative aspect-video overflow-hidden bg-gray-900">
-          {/* 封面图：悬浮且视频已就绪时淡出 */}
           {!imgError && video.cover_image && (
             <Image src={coverSrc} alt={video.title} fill
               className={`object-cover transition-opacity duration-300 ${isHovered && videoReady ? 'opacity-0' : 'opacity-100'}`}
               sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
               onError={() => setImgError(true)} priority={priority} loading={priority ? 'eager' : 'lazy'} />
           )}
-          {/* 视频层：悬浮时渲染，就绪后淡入 */}
           {isHovered && (
             video.is_scraped ? (
               <video ref={videoRef} muted loop playsInline
@@ -125,3 +112,5 @@ export default function VideoCard({ video, hoveredVideo, setHoveredVideo, format
     </div>
   )
 }
+
+export default memo(VideoCard)

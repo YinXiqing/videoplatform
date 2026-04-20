@@ -22,18 +22,19 @@ export default function VideoList({ initialVideos, initialTags, initialHasMore }
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(initialHasMore)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [hoveredVideo, setHoveredVideo] = useState<number | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
+  const stateRef = useRef({ page, activeTag, sortBy, hasMore, loadingMore })
+  stateRef.current = { page, activeTag, sortBy, hasMore, loadingMore }
 
-  const fetchVideos = useCallback(async (p: number, tag: string, sort: string) => {
-    if (p === 1) { setVideos([]); setHasMore(true) }
+  const fetchVideos = useCallback(async (p: number, tag: string, sort: string, replace: boolean) => {
     setLoadingMore(true)
     try {
       const params: Record<string, any> = { page: p, per_page: PER_PAGE, sort }
       if (tag) params.tag = tag
       const res = await api.get('/video/list', { params })
       const { videos: newVids, pages } = res.data
-      setVideos(prev => p === 1 ? newVids : [...prev, ...newVids])
+      // replace=true 时替换（切换 tag/sort），false 时追加（加载更多）
+      setVideos(prev => replace ? newVids : [...prev, ...newVids])
       setHasMore(p < pages)
       const tagSet = new Set<string>()
       newVids.forEach((v: Video) => (v.tags || []).forEach((t: string) => t.trim() && tagSet.add(t.trim())))
@@ -42,23 +43,27 @@ export default function VideoList({ initialVideos, initialTags, initialHasMore }
     finally { setLoadingMore(false) }
   }, [])
 
+  // 切换 tag/sort 时重置并替换数据（不清空，避免空白闪烁）
   useEffect(() => {
     setPage(1)
-    fetchVideos(1, activeTag, sortBy)
+    fetchVideos(1, activeTag, sortBy, true)
   }, [activeTag, sortBy])
 
+  // 无限滚动
   useEffect(() => {
-    if (!sentinelRef.current) return
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
     const obs = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore && !loadingMore) {
-        const next = page + 1
-        setPage(next)
-        fetchVideos(next, activeTag, sortBy)
-      }
+      if (!entries[0].isIntersecting) return
+      const { page, activeTag, sortBy, hasMore, loadingMore } = stateRef.current
+      if (!hasMore || loadingMore) return
+      const next = page + 1
+      setPage(next)
+      fetchVideos(next, activeTag, sortBy, false)
     }, { threshold: 0.1 })
-    obs.observe(sentinelRef.current)
+    obs.observe(sentinel)
     return () => obs.disconnect()
-  }, [hasMore, loadingMore, page, activeTag, sortBy, fetchVideos])
+  }, [fetchVideos])
 
   return (
     <>
@@ -89,7 +94,7 @@ export default function VideoList({ initialVideos, initialTags, initialHasMore }
       {videos.length > 0 ? (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {videos.map((v, i) => <VideoCard key={v.id} video={v} hoveredVideo={hoveredVideo} setHoveredVideo={setHoveredVideo} formatViews={fmt} formatDuration={dur} priority={i < 4} />)}
+            {videos.map((v, i) => <VideoCard key={v.id} video={v} formatViews={fmt} formatDuration={dur} priority={i < 4} />)}
           </div>
           <div ref={sentinelRef} className="h-10 flex items-center justify-center mt-6">
             {loadingMore && <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600" />}

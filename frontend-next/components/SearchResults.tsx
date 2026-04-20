@@ -27,6 +27,7 @@ function SearchResultsInner({ initialVideos, initialTotal, initialPages, initial
   const [loading, setLoading] = useState(false)
   const [hoveredVideo, setHoveredVideo] = useState<number | null>(null)
 
+
   const search = useCallback(async (p: number, sort: string, tag: string) => {
     setLoading(true)
     try {
@@ -89,7 +90,7 @@ function SearchResultsInner({ initialVideos, initialTotal, initialPages, initial
         ) : videos.length > 0 ? (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {videos.map((v, i) => <VideoCard key={v.id} video={v} hoveredVideo={hoveredVideo} setHoveredVideo={setHoveredVideo} formatViews={fmt} formatDuration={dur} priority={i < 4} />)}
+              {videos.map((v, i) => <VideoCard key={v.id} video={v} formatViews={fmt} formatDuration={dur} priority={i < 4} />)}
             </div>
             {totalPages > 1 && (
               <div className="flex justify-center mt-8 space-x-2">

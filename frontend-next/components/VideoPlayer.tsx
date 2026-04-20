@@ -5,6 +5,7 @@ import Image from 'next/image'
 import api from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import Toast from '@/components/Toast'
 import type { Video } from '@/types'
 
 declare global { interface Window { Hls: any } }
@@ -12,7 +13,6 @@ declare global { interface Window { Hls: any } }
 const dur = (s: number | null) => s ? `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}` : '00:00'
 const fmt = (v: number) => v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `${(v/1e3).toFixed(1)}K` : String(v)
 
-type Toast = { msg: string; type: 'success' | 'error' } | null
 type ConfirmState = { isOpen: boolean; type?: string; title?: string; message?: string; onConfirm?: () => void }
 
 export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
@@ -20,18 +20,15 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
   const [video, setVideo] = useState<Video>(initialVideo)
   const [isPlaying, setIsPlaying] = useState(false)
   const [relatedVideos, setRelatedVideos] = useState<Video[]>([])
-  const [toast, setToast] = useState<Toast>(null)
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [confirm, setConfirm] = useState<ConfirmState>({ isOpen: false })
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<any>(null)
 
-  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
-    setToast({ msg, type }); setTimeout(() => setToast(null), 3000)
-  }
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type })
 
   useEffect(() => {
     window.scrollTo(0, 0)
-    document.title = `${video.title} - 视频平台`
     fetchRelated()
     setIsPlaying(true)
   }, [video.id])
@@ -65,15 +62,8 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
     }
     const url = video.video_url || video.source_url
     if (!url) return
-    if (window.Hls) {
-      const t = setTimeout(() => initHls(url), 100)
-      return () => { clearTimeout(t); hlsRef.current?.destroy(); hlsRef.current = null }
-    }
-    const s = document.createElement('script')
-    s.src = 'https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js'
-    s.onload = () => setTimeout(() => initHls(url), 100)
-    document.head.appendChild(s)
-    return () => { hlsRef.current?.destroy(); hlsRef.current = null }
+    const t = setTimeout(() => initHls(url), 100)
+    return () => { clearTimeout(t); hlsRef.current?.destroy(); hlsRef.current = null }
   }, [isPlaying, video])
 
   const fetchRelated = async () => {
@@ -179,7 +169,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
       </div>
 
       <ConfirmDialog isOpen={confirm.isOpen} onClose={() => setConfirm({ isOpen: false })} onConfirm={confirm.onConfirm} title={confirm.title} message={confirm.message} type={confirm.type} confirmText="确认" cancelText="取消" />
-      {toast && <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl shadow-lg text-white text-sm font-medium ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>{toast.msg}</div>}
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   )
 }
