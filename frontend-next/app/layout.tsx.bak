@@ -3,28 +3,19 @@ import type { ReactNode } from 'react'
 import Script from 'next/script'
 import { AuthProvider } from '@/contexts/AuthContext'
 import Navbar from '@/components/Navbar'
-
 export const metadata = { title: '视频平台', description: '轻量级视频分享平台', icons: { icon: '/icon.svg' } }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="zh-CN" className="dark">
+    <html lang="zh-CN">
       <body>
-        {/* 防止主题切换闪烁：在 JS 加载前读取 localStorage 并应用主题 */}
-        <script dangerouslySetInnerHTML={{ __html: `
-          history.scrollRestoration='manual';
-          (function(){
-            var t = localStorage.getItem('theme');
-            if (t === 'light') document.documentElement.classList.remove('dark');
-            else document.documentElement.classList.add('dark');
-          })();
-        `}} />
+        <script dangerouslySetInnerHTML={{ __html: "history.scrollRestoration='manual'" }} />
         <Script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js" strategy="afterInteractive" />
         <AuthProvider>
           <div className="min-h-screen flex flex-col">
             <Navbar />
             <main className="flex-1">{children}</main>
-            <footer className="bg-gray-800 dark:bg-[#1a1a1a] text-gray-300 py-8 hidden md:block border-t border-gray-700 dark:border-gray-800">
+            <footer className="bg-gray-800 text-gray-300 py-8 hidden md:block">
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                   <div>

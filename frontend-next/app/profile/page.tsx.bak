@@ -36,30 +36,30 @@ export default function Profile() {
 
   return (
     <RequireAuth>
-    <div className="min-h-screen bg-gray-50 dark:bg-[#0f0f0f] py-8">
+    <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-lg mx-auto px-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-8">个人资料</h1>
-        <div className="bg-white dark:bg-[#1f1f1f] rounded-xl shadow-sm p-6 mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 mb-8">个人资料</h1>
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
           <div className="flex items-center space-x-4 mb-6">
             <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center">
               <span className="text-2xl font-bold text-primary-700">{user.username?.charAt(0).toUpperCase()}</span>
             </div>
-            <div><p className="text-lg font-semibold text-gray-900 dark:text-gray-100">{user.username}</p><p className="text-sm text-gray-500 dark:text-gray-400">{user.role === 'admin' ? '管理员' : '普通用户'}</p></div>
+            <div><p className="text-lg font-semibold text-gray-900">{user.username}</p><p className="text-sm text-gray-500">{user.role === 'admin' ? '管理员' : '普通用户'}</p></div>
           </div>
           <form onSubmit={handleEmail} className="space-y-4">
-            <h2 className="font-medium text-gray-900 dark:text-gray-100">修改邮箱</h2>
+            <h2 className="font-medium text-gray-900">修改邮箱</h2>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-[#2a2a2a] dark:text-gray-100 dark:focus:ring-primary-400 text-sm" />
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm" />
             <button type="submit" disabled={loading} className="w-full bg-primary-600 text-white py-2.5 rounded-lg hover:bg-primary-700 disabled:opacity-50 text-sm font-medium">更新邮箱</button>
           </form>
         </div>
-        <div className="bg-white dark:bg-[#1f1f1f] rounded-xl shadow-sm p-6">
+        <div className="bg-white rounded-xl shadow-sm p-6">
           <form onSubmit={handlePassword} className="space-y-4">
-            <h2 className="font-medium text-gray-900 dark:text-gray-100">修改密码</h2>
+            <h2 className="font-medium text-gray-900">修改密码</h2>
             <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="新密码（至少6位）" required
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-[#2a2a2a] dark:text-gray-100 dark:focus:ring-primary-400 text-sm" />
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm" />
             <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="确认新密码" required
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-[#2a2a2a] dark:text-gray-100 dark:focus:ring-primary-400 text-sm" />
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm" />
             <button type="submit" disabled={loading} className="w-full bg-primary-600 text-white py-2.5 rounded-lg hover:bg-primary-700 disabled:opacity-50 text-sm font-medium">更新密码</button>
           </form>
         </div>

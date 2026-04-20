@@ -55,18 +55,18 @@ function SearchResultsInner({ initialVideos, initialTotal, initialPages, initial
   }, [sortBy, page, activeTag])
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#0f0f0f] py-8">
+    <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-6">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{query ? `"${query}" 的搜索结果` : '所有视频'}</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">共 {total} 个视频</p>
+          <h1 className="text-xl font-bold text-gray-900">{query ? `"${query}" 的搜索结果` : '所有视频'}</h1>
+          <p className="text-gray-500 text-sm mt-1">共 {total} 个视频</p>
         </div>
 
         <div className="mb-6 space-y-3">
           <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-500 dark:text-gray-400">排序方式:</span>
+            <span className="text-sm text-gray-500">排序方式:</span>
             <select value={sortBy} onChange={e => { setSortBy(e.target.value); setPage(1) }}
-              className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-[#2a2a2a] dark:text-gray-100 dark:focus:ring-primary-400">
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
               <option value="newest">最新发布</option>
               <option value="popular">最热播放</option>
               <option value="oldest">最早发布</option>
@@ -74,10 +74,10 @@ function SearchResultsInner({ initialVideos, initialTotal, initialPages, initial
           </div>
           {allTags.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => { setActiveTag(''); setPage(1) }} className={`px-3 py-1 rounded-full text-sm ${activeTag === '' ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 dark:bg-[#333]'}`}>全部</button>
+              <button onClick={() => { setActiveTag(''); setPage(1) }} className={`px-3 py-1 rounded-full text-sm ${activeTag === '' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>全部</button>
               {allTags.slice(0, 20).map(tag => (
                 <button key={tag} onClick={() => { setActiveTag(activeTag === tag ? '' : tag); setPage(1) }}
-                  className={`px-3 py-1 rounded-full text-sm ${activeTag === tag ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 dark:bg-[#333]'}`}>{tag}</button>
+                  className={`px-3 py-1 rounded-full text-sm ${activeTag === tag ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{tag}</button>
               ))}
             </div>
           )}
@@ -85,7 +85,7 @@ function SearchResultsInner({ initialVideos, initialTotal, initialPages, initial
 
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {[...Array(8)].map((_, i) => <div key={i} className="bg-white dark:bg-[#1f1f1f] rounded-xl shadow-sm overflow-hidden animate-pulse"><div className="aspect-video bg-gray-200 dark:bg-[#333]" /><div className="p-4"><div className="h-4 bg-gray-200 dark:bg-[#333] rounded w-3/4 mb-2" /><div className="h-3 bg-gray-200 dark:bg-[#333] rounded w-1/2" /></div></div>)}
+            {[...Array(8)].map((_, i) => <div key={i} className="bg-white rounded-xl shadow-sm overflow-hidden animate-pulse"><div className="aspect-video bg-gray-200" /><div className="p-4"><div className="h-4 bg-gray-200 rounded w-3/4 mb-2" /><div className="h-3 bg-gray-200 rounded w-1/2" /></div></div>)}
           </div>
         ) : videos.length > 0 ? (
           <>
@@ -94,17 +94,17 @@ function SearchResultsInner({ initialVideos, initialTotal, initialPages, initial
             </div>
             {totalPages > 1 && (
               <div className="flex justify-center mt-8 space-x-2">
-                <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800">上一页</button>
+                <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50">上一页</button>
                 {[...Array(Math.min(totalPages, 7))].map((_, i) => (
-                  <button key={i} onClick={() => setPage(i+1)} className={`w-10 h-10 rounded-lg ${page === i+1 ? 'bg-primary-600 text-white' : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>{i+1}</button>
+                  <button key={i} onClick={() => setPage(i+1)} className={`w-10 h-10 rounded-lg ${page === i+1 ? 'bg-primary-600 text-white' : 'border border-gray-300 hover:bg-gray-50'}`}>{i+1}</button>
                 ))}
-                <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800">下一页</button>
+                <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages} className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50">下一页</button>
               </div>
             )}
           </>
         ) : (
           <div className="text-center py-16">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">未找到相关视频</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">未找到相关视频</h3>
             <Link href="/" className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700">返回首页</Link>
           </div>
         )}

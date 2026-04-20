@@ -68,11 +68,11 @@ export default function VideoList({ initialVideos, initialTags, initialHasMore }
   return (
     <>
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">推荐视频</h2>
+        <h2 className="text-2xl font-bold text-gray-900">推荐视频</h2>
         <div className="flex items-center gap-2">
           {['newest', 'popular'].map(s => (
             <button key={s} onClick={() => setSortBy(s)}
-              className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${sortBy === s ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 dark:bg-[#333]'}`}>
+              className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${sortBy === s ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {s === 'newest' ? '最新' : '最热'}
             </button>
           ))}
@@ -81,10 +81,10 @@ export default function VideoList({ initialVideos, initialTags, initialHasMore }
 
       {allTags.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-6">
-          <button onClick={() => setActiveTag('')} className={`px-3 py-1 rounded-full text-sm transition-colors ${activeTag === '' ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 dark:bg-[#333]'}`}>全部</button>
+          <button onClick={() => setActiveTag('')} className={`px-3 py-1 rounded-full text-sm transition-colors ${activeTag === '' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>全部</button>
           {allTags.slice(0, 20).map(tag => (
             <button key={tag} onClick={() => setActiveTag(activeTag === tag ? '' : tag)}
-              className={`px-3 py-1 rounded-full text-sm transition-colors ${activeTag === tag ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 dark:bg-[#333]'}`}>
+              className={`px-3 py-1 rounded-full text-sm transition-colors ${activeTag === tag ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {tag}
             </button>
           ))}
@@ -98,11 +98,11 @@ export default function VideoList({ initialVideos, initialTags, initialHasMore }
           </div>
           <div ref={sentinelRef} className="h-10 flex items-center justify-center mt-6">
             {loadingMore && <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600" />}
-            {!hasMore && <p className="text-gray-400 dark:text-gray-500 text-sm">已加载全部视频</p>}
+            {!hasMore && <p className="text-gray-400 text-sm">已加载全部视频</p>}
           </div>
         </>
       ) : (
-        <div className="text-center py-16 text-gray-400 dark:text-gray-500">
+        <div className="text-center py-16 text-gray-400">
           <p>{activeTag ? `没有标签为"${activeTag}"的视频` : '暂无视频'}</p>
           {activeTag && <button onClick={() => setActiveTag('')} className="mt-2 text-primary-600 text-sm hover:underline">清除过滤</button>}
         </div>

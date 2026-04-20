@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@variant dark (&:where(.dark, .dark *));
 
 button, a, [role="button"], select, label[for], input[type="checkbox"], input[type="radio"] {
   cursor: pointer;
@@ -20,9 +19,4 @@ button, a, [role="button"], select, label[for], input[type="checkbox"], input[ty
 
 body {
   @apply bg-gray-50 text-gray-900;
-}
-
-.dark body {
-  background-color: #0f0f0f;
-  color: #f1f1f1;
 }
