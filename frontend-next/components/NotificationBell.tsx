@@ -7,7 +7,6 @@ import api from '@/lib/api'
 export default function NotificationBell() {
   const { user, isAdmin } = useAuth()
   const [count, setCount] = useState(0)
-  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -25,8 +24,8 @@ export default function NotificationBell() {
   }, [user])
 
   return (
-    <div className="relative">
-      <button onClick={() => setOpen(o => !o)} className="relative p-2 text-gray-600 hover:text-gray-900">
+    <div className="relative group">
+      <button className="relative p-2 text-gray-600 hover:text-gray-900">
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538.214 1.055.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
         </svg>
@@ -34,21 +33,19 @@ export default function NotificationBell() {
           <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">{count}</span>
         )}
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 p-4">
-            <p className="font-medium text-gray-900 mb-1">{isAdmin() ? '待审核视频' : '审核未通过'}</p>
-            <p className="text-sm text-gray-500 mb-3">共 {count} 个</p>
-            {count > 0 && (
-              <Link href={isAdmin() ? '/admin/videos' : '/my-videos'} onClick={() => setOpen(false)}
-                className="block w-full bg-primary-600 text-white text-center py-2 rounded-lg hover:bg-primary-700 transition-colors text-sm">
-                {isAdmin() ? '立即审核' : '查看我的视频'}
-              </Link>
-            )}
-          </div>
-        </>
-      )}
+      <div className="absolute right-0 top-8 w-64 bg-white rounded-xl shadow-lg border border-gray-100 py-1 text-sm invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-150 z-50">
+        <div className="px-4 py-2 border-b border-gray-100">
+          <p className="font-medium text-gray-900">{isAdmin() ? '待审核视频' : '审核未通过'}</p>
+          <p className="text-xs text-gray-500 mt-0.5">共 {count} 个</p>
+        </div>
+        {count > 0 && (
+          <Link href={isAdmin() ? '/admin/videos' : '/my-videos'}
+            className="block px-4 py-2 text-primary-600 hover:bg-gray-50 transition-colors">
+            {isAdmin() ? '立即审核 →' : '查看我的视频 →'}
+          </Link>
+        )}
+        {count === 0 && <p className="px-4 py-2 text-gray-400">暂无通知</p>}
+      </div>
     </div>
   )
 }

@@ -55,16 +55,15 @@ export default function Navbar() {
 
             {/* 右侧 */}
             <div className="flex items-center gap-2 ml-auto z-10">
+              {/* 上传按钮 - 始终显示，未登录跳登录页 */}
+              <Link href={user ? "/upload" : "/login"} className="hidden sm:flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors px-2 py-1 rounded-lg hover:bg-gray-50">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span className="hidden md:block">上传</span>
+              </Link>
               {user ? (
                 <>
-                  {/* 上传按钮 */}
-                  <Link href="/upload" className="hidden sm:flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors px-2 py-1 rounded-lg hover:bg-gray-50">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                    </svg>
-                    <span className="hidden md:block">上传</span>
-                  </Link>
-
                   <NotificationBell />
 
                   {/* 头像 + 下拉菜单 */}
@@ -106,12 +105,12 @@ export default function Navbar() {
           {[
             { href: '/', label: '首页', d: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
             { href: '/search', label: '搜索', d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' },
-            ...(user ? [{ href: '/upload', label: '上传', d: 'M12 4v16m8-8H4' }] : []),
+            { href: user ? '/upload' : '/login', label: '上传', d: 'M12 4v16m8-8H4' },
             user
               ? { href: '/my-videos', label: '我的', d: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' }
               : { href: '/login', label: '登录', d: 'M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1' },
           ].map(item => (
-            <Link key={item.href} href={item.href}
+            <Link key={item.label} href={item.href}
               className={`flex-1 flex flex-col items-center py-2 text-xs transition-colors ${pathname === item.href ? 'text-primary-600' : 'text-gray-500'}`}>
               <svg className="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.d} />

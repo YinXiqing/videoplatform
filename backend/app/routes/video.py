@@ -138,17 +138,33 @@ async def get_cover(video_id: int, db: AsyncSession = Depends(get_db)):
 async def upload_video(title: str = Form(...), description: str = Form(""), tags: str = Form(""),
                        video: UploadFile = File(...), cover: Optional[UploadFile] = File(None),
                        db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    # 验证扩展名
     if _ext(video.filename) not in settings.ALLOWED_VIDEO_EXTENSIONS:
         raise HTTPException(400, "Invalid video format")
+    
+    # 读取并验证视频文件
     content = await video.read()
     if len(content) > settings.MAX_UPLOAD_SIZE:
         raise HTTPException(413, "File too large")
+    
+    # 读取并验证封面图片
+    cover_content = None
+    if cover and cover.filename:
+        if _ext(cover.filename) not in settings.ALLOWED_IMAGE_EXTENSIONS:
+            raise HTTPException(400, "Invalid cover image format")
+        cover_content = await cover.read()
+        if len(cover_content) > 10 * 1024 * 1024:  # 10MB 限制
+            raise HTTPException(413, "Cover image too large")
+    
+    # 所有验证通过后再保存文件
     filename = f"{uuid.uuid4().hex}.{_ext(video.filename)}"
     (settings.UPLOAD_FOLDER / filename).write_bytes(content)
+    
     cover_filename = None
-    if cover and cover.filename and _ext(cover.filename) in settings.ALLOWED_IMAGE_EXTENSIONS:
+    if cover_content:
         cover_filename = f"cover_{uuid.uuid4().hex}.{_ext(cover.filename)}"
-        (settings.UPLOAD_FOLDER / cover_filename).write_bytes(await cover.read())
+        (settings.UPLOAD_FOLDER / cover_filename).write_bytes(cover_content)
+    
     record = Video(title=title.strip(), description=description.strip(), tags=tags.strip(),
                    filename=filename, cover_image=cover_filename, file_size=len(content),
                    user_id=user.id, status="pending")

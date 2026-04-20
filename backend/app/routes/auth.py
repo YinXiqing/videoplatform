@@ -1,20 +1,23 @@
 import re
-from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timedelta, timezone
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from jose import jwt
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.deps import get_db, get_current_user
 from app.models import User
 from config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+limiter = Limiter(key_func=get_remote_address)
 
 EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 
 def create_token(user_id: int) -> str:
-    expire = datetime.utcnow() + timedelta(hours=settings.JWT_EXPIRE_HOURS)
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.JWT_EXPIRE_HOURS)
     return jwt.encode({"sub": str(user_id), "exp": expire}, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 class RegisterIn(BaseModel):
@@ -31,7 +34,8 @@ class ProfileUpdate(BaseModel):
     password: str | None = None
 
 @router.post("/register", status_code=201)
-async def register(data: RegisterIn, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def register(request: Request, data: RegisterIn, db: AsyncSession = Depends(get_db)):
     username = data.username.strip()
     email = data.email.strip().lower()
     if len(username) < 3 or len(username) > 80:
@@ -53,7 +57,8 @@ async def register(data: RegisterIn, db: AsyncSession = Depends(get_db)):
     return {"message": "User registered successfully", "user": user.to_dict()}
 
 @router.post("/login")
-async def login(data: LoginIn, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, response: Response, data: LoginIn, db: AsyncSession = Depends(get_db)):
     ident = data.username.strip()
     result = await db.execute(select(User).where(or_(User.username == ident, User.email == ident)))
     user = result.scalar_one_or_none()
@@ -63,11 +68,26 @@ async def login(data: LoginIn, db: AsyncSession = Depends(get_db)):
         raise HTTPException(401, "密码错误")
     if not user.is_active:
         raise HTTPException(403, "Account is disabled")
-    return {"message": "Login successful", "access_token": create_token(user.id), "user": user.to_dict()}
+    
+    token = create_token(user.id)
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=False,  # 生产环境改为 True (需要 HTTPS)
+        samesite="lax",
+        max_age=settings.JWT_EXPIRE_HOURS * 3600
+    )
+    return {"message": "Login successful", "access_token": token, "user": user.to_dict()}
 
 @router.get("/profile")
 async def get_profile(user: User = Depends(get_current_user)):
     return {"user": user.to_dict()}
+
+@router.post("/logout")
+async def logout(response: Response):
+    response.delete_cookie(key="access_token")
+    return {"message": "Logged out successfully"}
 
 @router.put("/profile")
 async def update_profile(data: ProfileUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):

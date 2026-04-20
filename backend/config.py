@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from pathlib import Path
+import secrets
 
 BASE_DIR = Path(__file__).parent
 
@@ -27,4 +28,13 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 settings = Settings()
+
+# 安全警告：生产环境必须使用强密钥
+if settings.SECRET_KEY == "dev-secret-key-change-in-production":
+    print("⚠️  WARNING: Using default SECRET_KEY! Generate a secure key with:")
+    print(f"   SECRET_KEY={secrets.token_urlsafe(32)}")
+if settings.JWT_SECRET_KEY == "jwt-secret-key-change-in-production":
+    print("⚠️  WARNING: Using default JWT_SECRET_KEY! Generate a secure key with:")
+    print(f"   JWT_SECRET_KEY={secrets.token_urlsafe(32)}")
+
 settings.UPLOAD_FOLDER.mkdir(exist_ok=True)
