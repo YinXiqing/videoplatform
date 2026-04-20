@@ -3,13 +3,13 @@ import type { ReactNode } from 'react'
 import Script from 'next/script'
 import { AuthProvider } from '@/contexts/AuthContext'
 import Navbar from '@/components/Navbar'
-
 export const metadata = { title: '视频平台', description: '轻量级视频分享平台', icons: { icon: '/icon.svg' } }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN">
       <body>
+        <script dangerouslySetInnerHTML={{ __html: "history.scrollRestoration='manual'" }} />
         <Script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js" strategy="afterInteractive" />
         <AuthProvider>
           <div className="min-h-screen flex flex-col">

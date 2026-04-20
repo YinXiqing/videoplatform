@@ -72,17 +72,6 @@ class Video(Base):
         }
 
 
-class WatchHistory(Base):
-    __tablename__ = "watch_history"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    video_id: Mapped[int] = mapped_column(Integer, ForeignKey("videos.id"), nullable=False)
-    watched_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), index=True)
-
-    video: Mapped["Video"] = relationship("Video", lazy="select")
-
-
 class ScrapedVideoInfo(Base):
     __tablename__ = "scraped_videos"
 

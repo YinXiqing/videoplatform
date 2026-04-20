@@ -49,8 +49,13 @@ export default function Upload() {
           'Content-Type': 'multipart/form-data',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        onUploadProgress: (e) => setProgress(Math.round((e.loaded * 100) / (e.total ?? 1))),
+        onUploadProgress: (e) => {
+          const pct = Math.round((e.loaded * 100) / (e.total ?? 1))
+          // 网络传输最多到 95%，剩余 5% 留给服务器处理（写文件+数据库）
+          setProgress(Math.min(pct, 95))
+        },
       })
+      setProgress(100)
       setSuccess(true)
       setTimeout(() => router.push('/my-videos'), 2000)
     } catch (err: any) {

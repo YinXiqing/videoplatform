@@ -30,21 +30,6 @@ async def _get_duration(path) -> int:
     except Exception:
         return 0
 
-async def _extract_cover(video_path, cover_filename) -> bool:
-    try:
-        loop = asyncio.get_running_loop()
-        def _run():
-            import subprocess
-            r = subprocess.run(
-                ["ffmpeg", "-y", "-i", str(video_path), "-ss", "00:00:01",
-                 "-vframes", "1", "-q:v", "2", str(settings.UPLOAD_FOLDER / cover_filename)],
-                capture_output=True, timeout=15
-            )
-            return r.returncode == 0
-        return await loop.run_in_executor(None, _run)
-    except Exception:
-        return False
-
 
 async def _delete_video_files(video: Video):
     """删除视频关联的本地文件（跳过外链）"""
@@ -57,13 +42,12 @@ async def _delete_video_files(video: Video):
 
 
 async def _delete_video(db: AsyncSession, video: Video):
-    """删除视频：本地文件 + scraped记录 + watch_history + 数据库记录"""
+    """删除视频：本地文件 + scraped记录 + 数据库记录"""
     from sqlalchemy import delete as sa_delete
-    from app.models import ScrapedVideoInfo, WatchHistory
+    from app.models import ScrapedVideoInfo
     await _delete_video_files(video)
     if video.page_url:
         await db.execute(sa_delete(ScrapedVideoInfo).where(ScrapedVideoInfo.source_url == video.page_url))
-    await db.execute(sa_delete(WatchHistory).where(WatchHistory.video_id == video.id))
     await db.delete(video)
 
 
@@ -143,23 +127,8 @@ async def stream_video(video_id: int, db: AsyncSession = Depends(get_db),
     if video.status not in ("approved", "pending"):
         if not user or (user.id != video.user_id and user.role != "admin"):
             raise HTTPException(403, "Access denied")
-    # 同一用户1小时内不重复计数
-    from datetime import datetime, timedelta
-    from app.models import WatchHistory
-    should_count = True
-    if user:
-        recent = (await db.execute(
-            select(WatchHistory).where(
-                WatchHistory.user_id == user.id,
-                WatchHistory.video_id == video_id,
-                WatchHistory.watched_at >= datetime.utcnow() - timedelta(hours=1)
-            )
-        )).scalar_one_or_none()
-        if recent:
-            should_count = False
-    if should_count:
-        await db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
-        await db.commit()
+    await db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
+    await db.commit()
     if video.is_scraped and video.source_url:
         return {"is_external": True, "video_url": video.source_url}
     path = settings.UPLOAD_FOLDER / video.filename
@@ -213,26 +182,14 @@ async def upload_video(title: str = Form(...), description: str = Form(""), tags
         cover_filename = f"cover_{uuid.uuid4().hex}.{_ext(cover.filename)}"
         async with aiofiles.open(settings.UPLOAD_FOLDER / cover_filename, "wb") as f:
             await f.write(cover_content)
-    else:
-        auto_cover = f"cover_{uuid.uuid4().hex}.jpg"
-        if await _extract_cover(settings.UPLOAD_FOLDER / filename, auto_cover):
-            cover_filename = auto_cover
-
-    # 数据库写入失败时清理已写入的文件，保证一致性
-    try:
-        record = Video(title=title.strip(), description=description.strip(), tags=tags.strip(),
-                       filename=filename, cover_image=cover_filename, file_size=len(content),
-                       duration=await _get_duration(settings.UPLOAD_FOLDER / filename),
-                       user_id=user.id, status="pending")
-        db.add(record)
-        await db.commit()
-        await db.refresh(record)
-    except Exception:
-        for f in [filename, cover_filename]:
-            if f:
-                p = settings.UPLOAD_FOLDER / f
-                if p.exists(): p.unlink()
-        raise HTTPException(500, "Upload failed, please try again")
+    
+    record = Video(title=title.strip(), description=description.strip(), tags=tags.strip(),
+                   filename=filename, cover_image=cover_filename, file_size=len(content),
+                   duration=await _get_duration(settings.UPLOAD_FOLDER / filename),
+                   user_id=user.id, status="pending")
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
     return {"message": "Video uploaded successfully. Awaiting admin approval.", "video": record.to_dict()}
 
 

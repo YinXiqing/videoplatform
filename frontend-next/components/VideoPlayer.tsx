@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import api from '@/lib/api'
@@ -16,9 +16,10 @@ const fmt = (v: number) => v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `${(
 type ConfirmState = { isOpen: boolean; type?: string; title?: string; message?: string; onConfirm?: () => void }
 
 export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
-  const { isAdmin } = useAuth()
+  const { isAdmin, user } = useAuth()
   const [video, setVideo] = useState<Video>(initialVideo)
-  const [isPlaying, setIsPlaying] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(true)
+  const [playError, setPlayError] = useState(false)
   const [relatedVideos, setRelatedVideos] = useState<Video[]>([])
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [confirm, setConfirm] = useState<ConfirmState>({ isOpen: false })
@@ -30,7 +31,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
   useEffect(() => {
     window.scrollTo(0, 0)
     fetchRelated()
-    setIsPlaying(true)
+    if (user) api.post(`/video/history/${video.id}`).catch(() => {})
   }, [video.id])
 
   useEffect(() => {
@@ -53,7 +54,11 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
         })
         hls.on(window.Hls.Events.ERROR, (_: any, d: any) => {
           if (d.fatal) {
-            fetch(`/api/video/refresh-url/${video.id}`).then(r => r.json()).then(data => { if (data.video_url) initHls(data.video_url) }).catch(() => {})
+            hls.destroy(); hlsRef.current = null
+            fetch(`/api/video/refresh-url/${video.id}`)
+              .then(r => r.json())
+              .then(data => { if (data.video_url) initHls(data.video_url); else setPlayError(true) })
+              .catch(() => setPlayError(true))
           }
         })
       } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
@@ -66,7 +71,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
     return () => { clearTimeout(t); hlsRef.current?.destroy(); hlsRef.current = null }
   }, [isPlaying, video])
 
-  const fetchRelated = async () => {
+  const fetchRelated = useCallback(async () => {
     try {
       const tags = (video.tags || []).filter(Boolean)
       const params: Record<string, any> = { per_page: 8 }
@@ -74,7 +79,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
       const res = await api.get('/video/list', { params })
       setRelatedVideos(res.data.videos.filter((r: Video) => r.id !== video.id).slice(0, 6))
     } catch { setRelatedVideos([]) }
-  }
+  }, [video.id, video.tags, video.title])
 
   const handleApprove = () => setConfirm({ isOpen: true, type: 'info', title: '审核通过', message: '确定要通过这个视频的审核吗？', onConfirm: async () => {
     try { await api.put(`/admin/videos/${video.id}`, { status: 'approved' }); setVideo({...video, status: 'approved'}); showToast('视频已通过审核 ✓') } catch { showToast('操作失败', 'error') }
@@ -94,7 +99,14 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
         <div className="bg-black rounded-xl overflow-hidden aspect-video relative">
           {isPlaying ? (
             video.is_scraped
-              ? <video ref={videoRef} controls muted className="w-full h-full object-contain" crossOrigin="anonymous" />
+              ? playError
+                ? <div className="w-full h-full flex flex-col items-center justify-center text-white gap-3">
+                    <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                    <p className="text-gray-300 text-sm">视频加载失败</p>
+                    <button onClick={() => { setPlayError(false); setIsPlaying(false); setTimeout(() => setIsPlaying(true), 100) }}
+                      className="px-4 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm transition-colors">重试</button>
+                  </div>
+                : <video ref={videoRef} controls muted className="w-full h-full object-contain" crossOrigin="anonymous" />
               : <video controls autoPlay className="w-full h-full object-contain" src={`/api/video/stream/${video.id}`}
                   onTimeUpdate={e => localStorage.setItem(`vp_${video.id}`, String((e.target as HTMLVideoElement).currentTime))}
                   onLoadedMetadata={e => { const s = parseFloat(localStorage.getItem(`vp_${video.id}`) ?? '0'); if (s > 5) (e.target as HTMLVideoElement).currentTime = s }}>
@@ -152,7 +164,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
                 <Link key={rv.id} href={`/video/${rv.id}`} className="flex space-x-3 group flex-shrink-0 w-64 lg:w-auto">
                   <div className="w-32 h-20 rounded overflow-hidden flex-shrink-0 relative">
                     {rv.cover_image
-                      ? <img src={rv.is_scraped && rv.cover_image?.startsWith('http') ? rv.cover_image : `/api/video/cover/${rv.id}`} alt={rv.title} className="w-full h-full object-cover" />
+                      ? <Image src={rv.is_scraped && rv.cover_image?.startsWith('http') ? rv.cover_image : `/api/video/cover/${rv.id}`} alt={rv.title} fill className="object-cover" sizes="128px" />
                       : <div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600" />}
                     <div className="absolute bottom-1 right-1 bg-black/70 text-white text-xs px-1 py-0.5 rounded">{dur(rv.duration)}</div>
                   </div>
