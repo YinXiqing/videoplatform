@@ -40,7 +40,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 </div>
               </div>
             </footer>
-            <div className="md:hidden h-16" />
+            <div id="mobile-nav-spacer" className="md:hidden h-16" />
           </div>
         </AuthProvider>
       </body>

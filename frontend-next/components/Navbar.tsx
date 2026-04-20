@@ -149,8 +149,8 @@ export default function Navbar() {
         </div>
       </header>
 
-      {/* 移动端底部导航 */}
-      {!pathname.startsWith('/admin') && (
+      {/* 移动端底部导航 - 视频详情页隐藏，避免遮挡播放控制条 */}
+      {!pathname.startsWith('/admin') && !pathname.startsWith('/video/') && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 flex">
           {[
             { href: '/', label: '首页', d: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },

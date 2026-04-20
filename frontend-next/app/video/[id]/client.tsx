@@ -9,6 +9,12 @@ export default function VideoDetailClient({ id, initialVideo }: { id: string; in
   const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
+    const spacer = document.getElementById('mobile-nav-spacer')
+    if (spacer) spacer.style.display = 'none'
+    return () => { if (spacer) spacer.style.display = '' }
+  }, [])
+
+  useEffect(() => {
     if (initialVideo) return  // SSR 已获取到，无需再请求
     api.get(`/video/detail/${id}`)
       .then(r => setVideo(r.data.video))

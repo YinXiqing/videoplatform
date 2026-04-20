@@ -5,19 +5,24 @@
 ## 🛠 技术栈
 
 ### 前端
-- Next.js 16 + React 19
+- Next.js 16 + React 19（SSR + CSR 混合渲染）
 - TypeScript
 - Tailwind CSS 4
 - Axios
+- HLS.js（流媒体播放）
 
 ### 后端
 - Python 3.12
-- FastAPI + Uvicorn（异步）
+- FastAPI + Uvicorn（4 worker 异步）
 - SQLAlchemy 2.0（asyncio）
 - PostgreSQL（asyncpg）
 - python-jose（JWT）
-- bcrypt
+- bcrypt（异步密码加密）
+- aiofiles（异步文件 IO）
+- aiohttp（异步 HTTP）
 - yt-dlp + BeautifulSoup4（视频抓取）
+- structlog（结构化日志）
+- ffmpeg（视频时长提取、封面截图）
 
 ## 📁 项目结构
 
@@ -26,13 +31,14 @@ videoplatform/
 ├── service.sh               # 服务管理脚本
 ├── backend/
 │   ├── app/
-│   │   ├── __init__.py      # FastAPI 应用工厂
-│   │   ├── models.py        # 数据库模型（User, Video, ScrapedVideoInfo）
-│   │   ├── database.py      # 异步数据库引擎
+│   │   ├── __init__.py      # FastAPI 应用工厂（中间件、异常处理）
+│   │   ├── models.py        # 数据库模型（User, Video, ScrapedVideoInfo, WatchHistory）
+│   │   ├── database.py      # 异步数据库引擎（连接池）
 │   │   ├── deps.py          # 依赖注入
+│   │   ├── logger.py        # structlog 配置
 │   │   └── routes/
 │   │       ├── auth.py      # 认证路由
-│   │       ├── video.py     # 视频路由
+│   │       ├── video.py     # 视频路由（含观看历史）
 │   │       └── admin.py     # 管理路由
 │   ├── uploads/             # 上传文件存储
 │   ├── config.py            # 配置（pydantic-settings）
@@ -41,14 +47,15 @@ videoplatform/
 │
 └── frontend-next/
     ├── app/                 # Next.js App Router
-    │   ├── page.tsx         # 首页
+    │   ├── page.tsx         # 首页（SSR）
     │   ├── login/
     │   ├── register/
     │   ├── profile/
     │   ├── upload/
-    │   ├── search/
+    │   ├── search/          # 搜索页（SSR）
+    │   ├── history/         # 观看历史
     │   ├── my-videos/
-    │   ├── video/[id]/
+    │   ├── video/[id]/      # 视频详情（SSR + CSR 降级）
     │   └── admin/
     │       ├── page.tsx
     │       ├── users/
@@ -64,15 +71,19 @@ videoplatform/
 
 ### 前置条件
 
-- PostgreSQL 数据库，创建数据库和用户：
+- PostgreSQL 数据库：
   ```sql
   CREATE USER videoplatform WITH PASSWORD 'videoplatform';
   CREATE DATABASE videoplatform OWNER videoplatform;
   ```
+- ffmpeg（视频处理）：
+  ```bash
+  sudo apt install ffmpeg   # Ubuntu/Debian
+  ```
 
 ### 1. 配置后端环境变量
 
-编辑 `backend/.env`，按需修改数据库连接等配置：
+编辑 `backend/.env`：
 
 ```env
 DATABASE_URL=postgresql+asyncpg://videoplatform:videoplatform@localhost/videoplatform
@@ -119,19 +130,28 @@ pnpm dev
 
 ## 🌟 功能特性
 
-- 视频浏览、搜索（按标题、作者、简介）
+- 视频浏览、搜索（按标题、作者、简介），无限滚动加载
+- 搜索历史记录（本地缓存）
 - 用户注册、登录（JWT 认证，24 小时有效期）
-- 视频上传（MP4/AVI/MKV/MOV/WMV/FLV，最大 500MB），支持封面图片
-- 上传后需管理员审核才公开展示
-- 个人视频管理
-- 管理后台：用户管理、视频审核、视频抓取（yt-dlp）
+- 视频上传（MP4/AVI/MKV/MOV/WMV/FLV，最大 500MB）
+  - 自动提取视频时长
+  - 无封面时自动截取第 1 秒作为封面
+  - 上传后需管理员审核才公开展示
+- 视频播放（支持 HLS 流媒体、进度记忆、播放失败自动刷新 URL）
+- 播放量去重（同一用户 1 小时内不重复计数）
+- 观看历史记录（登录用户）
+- 个人视频管理（含列表内直接预览）
+- 管理后台：用户管理、视频审核（含预览）、视频抓取（yt-dlp）
 
 ## 🔒 安全措施
 
-- JWT Token 认证
-- bcrypt 密码加密
+- JWT Token 认证（Header + Cookie 双支持）
+- bcrypt 密码加密（异步执行，不阻塞事件循环）
 - SQLAlchemy ORM 参数化查询（防 SQL 注入）
 - 文件上传类型和大小校验
+- 速率限制（slowapi，200次/分钟）
+- 请求体大小限制（非上传接口 1MB）
+- 全局异常处理（500 错误统一返回 JSON）
 
 ## 📄 许可证
 
