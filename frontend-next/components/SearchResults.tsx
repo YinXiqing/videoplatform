@@ -19,23 +19,30 @@ interface SearchResultsProps {
 function SearchResultsInner({ initialVideos, initialTotal, initialPages, initialTags, query }: SearchResultsProps) {
   const [videos, setVideos] = useState<Video[]>(initialVideos)
   const [total, setTotal] = useState(initialTotal)
-  const [totalPages, setTotalPages] = useState(initialPages)
   const [allTags, setAllTags] = useState<string[]>(initialTags)
   const [sortBy, setSortBy] = useState('newest')
   const [page, setPage] = useState(1)
   const [activeTag, setActiveTag] = useState('')
   const [loading, setLoading] = useState(false)
+  const [hasMore, setHasMore] = useState(initialPages > 1)
 
 
-  const search = useCallback(async (p: number, sort: string, tag: string) => {
+  const search = useCallback(async (p: number, sort: string, tag: string, append: boolean = false) => {
     setLoading(true)
     try {
       const params: Record<string, any> = { search: query, sort, page: p, per_page: 12 }
       if (tag) params.tag = tag
       const res = await api.get('/video/list', { params })
-      setVideos(res.data.videos)
+      
+      if (append) {
+        setVideos(prev => [...prev, ...res.data.videos])
+      } else {
+        setVideos(res.data.videos)
+      }
+      
       setTotal(res.data.total)
-      setTotalPages(res.data.pages)
+      setHasMore(p < res.data.pages)
+      
       const tagSet = new Set<string>()
       res.data.videos.forEach((v: Video) => (v.tags || []).forEach((t: string) => t.trim() && tagSet.add(t.trim())))
       if (tagSet.size > 0) setAllTags(prev => [...new Set([...prev, ...tagSet])])
@@ -43,15 +50,39 @@ function SearchResultsInner({ initialVideos, initialTotal, initialPages, initial
     finally { setLoading(false) }
   }, [query])
 
+  // 滚动加载
+  useEffect(() => {
+    const handleScroll = () => {
+      if (loading || !hasMore) return
+      
+      const scrollTop = window.scrollY
+      const windowHeight = window.innerHeight
+      const documentHeight = document.documentElement.scrollHeight
+      
+      if (scrollTop + windowHeight >= documentHeight - 500) {
+        setPage(prev => prev + 1)
+      }
+    }
+    
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [loading, hasMore])
+
   useEffect(() => {
     setPage(1); setActiveTag(''); setSortBy('newest')
-    search(1, 'newest', '')
+    search(1, 'newest', '', false)
   }, [query])
 
   useEffect(() => {
+    if (page === 1) return
+    search(page, sortBy, activeTag, true)
+  }, [page])
+
+  useEffect(() => {
     if (sortBy === 'newest' && page === 1 && !activeTag) return
-    search(page, sortBy, activeTag)
-  }, [sortBy, page, activeTag])
+    setPage(1)
+    search(1, sortBy, activeTag, false)
+  }, [sortBy, activeTag])
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0f0f0f] py-8">
@@ -92,28 +123,22 @@ function SearchResultsInner({ initialVideos, initialTotal, initialPages, initial
         ) : videos.length > 0 ? (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {videos.map((v, i) => <VideoCard key={v.id} video={v} formatViews={fmt} formatDuration={dur} priority={i < 4} />)}
+              {videos.map((v, i) => <VideoCard key={`${v.id}-${i}`} video={v} formatViews={fmt} formatDuration={dur} priority={i < 4} />)}
             </div>
-            {totalPages > 1 && (
-              <div className="flex justify-center mt-8 items-center gap-1">
-                <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm">上一页</button>
-                {(() => {
-                  const pages: (number | '...')[] = []
-                  if (totalPages <= 7) {
-                    for (let i = 1; i <= totalPages; i++) pages.push(i)
-                  } else {
-                    pages.push(1)
-                    if (page > 3) pages.push('...')
-                    for (let i = Math.max(2, page-1); i <= Math.min(totalPages-1, page+1); i++) pages.push(i)
-                    if (page < totalPages - 2) pages.push('...')
-                    pages.push(totalPages)
-                  }
-                  return pages.map((p, i) => p === '...'
-                    ? <span key={`e${i}`} className="w-10 h-10 flex items-center justify-center text-gray-400">…</span>
-                    : <button key={p} onClick={() => setPage(p)} className={`w-10 h-10 rounded-lg text-sm ${page === p ? 'bg-primary-600 text-white' : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>{p}</button>
-                  )
-                })()}
-                <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages} className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm">下一页</button>
+            {loading && (
+              <div className="flex justify-center mt-8">
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                  <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>加载中...</span>
+                </div>
+              </div>
+            )}
+            {!hasMore && videos.length > 0 && (
+              <div className="text-center mt-8 text-gray-400 dark:text-gray-500 text-sm">
+                已加载全部 {total} 个视频
               </div>
             )}
           </>

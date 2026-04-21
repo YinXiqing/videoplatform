@@ -60,7 +60,6 @@ export default function Upload() {
         },
         onUploadProgress: (e) => {
           const pct = Math.round((e.loaded * 100) / (e.total ?? 1))
-          // 网络传输最多到 95%，剩余 5% 留给服务器处理（写文件+数据库）
           setProgress(Math.min(pct, 95))
         },
       })
