@@ -65,8 +65,7 @@ export default function Upload() {
         },
       })
       setProgress(100)
-      setSuccess(true)
-      setTimeout(() => router.push('/my-videos'), 2000)
+      router.push('/my-videos')
     } catch (err: any) {
       setError(err.response?.data?.detail || '上传失败，请重试')
     } finally { setUploading(false) }

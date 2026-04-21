@@ -20,23 +20,16 @@ function VideoCard({ video, formatViews, formatDuration, priority = false }: {
     const el = videoRef.current
     if (!el) return
 
-    if (video.hls_ready || video.is_scraped) {
-      const src = video.is_scraped && video.source_url
-        ? `/api/video/proxy?url=${encodeURIComponent(video.source_url)}`
-        : `/api/video/hls/${video.id}/index.m3u8`
+    const src = `/api/video/hls/${video.id}/index.m3u8`
 
-      if (window.Hls?.isSupported()) {
-        const hls = new window.Hls({ enableWorker: true, maxBufferLength: 8, startLevel: 0 })
-        hlsRef.current = hls
-        hls.loadSource(src)
-        hls.attachMedia(el)
-        hls.on(window.Hls.Events.MANIFEST_PARSED, () => el.play().catch(() => {}))
-      } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
-        el.src = src
-        el.play().catch(() => {})
-      }
-    } else {
-      el.src = `/api/video/file/${video.id}`
+    if (window.Hls?.isSupported()) {
+      const hls = new window.Hls({ enableWorker: true, maxBufferLength: 8, startLevel: 0 })
+      hlsRef.current = hls
+      hls.loadSource(src)
+      hls.attachMedia(el)
+      hls.on(window.Hls.Events.MANIFEST_PARSED, () => el.play().catch(() => {}))
+    } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
+      el.src = src
       el.play().catch(() => {})
     }
   }
@@ -57,9 +50,7 @@ function VideoCard({ video, formatViews, formatDuration, priority = false }: {
     if (videoRef.current) { videoRef.current.src = '' }
   }
 
-  const coverSrc = video.is_scraped && video.cover_image?.startsWith('http')
-    ? video.cover_image
-    : `/api/video/cover/${video.id}`
+  const coverSrc = `/api/video/cover/${video.id}`
 
   return (
     <div className="group bg-white dark:bg-[#1f1f1f] rounded-xl shadow-sm overflow-hidden hover:shadow-md dark:hover:shadow-black/30 transition-shadow"

@@ -114,9 +114,9 @@ function AdminVideosInner() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索标题、作者..."
-                  className="pl-9 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 w-48" />
+                  className="h-9 pl-9 pr-4 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 w-48" />
               </div>
-              <Button type="submit" variant="outline" size="sm">搜索</Button>
+              <Button type="submit" variant="outline">搜索</Button>
             </form>
           </div>
         </Card>

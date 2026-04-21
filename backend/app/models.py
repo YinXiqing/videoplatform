@@ -51,6 +51,7 @@ class Video(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     source_url: Mapped[str | None] = mapped_column(Text)
     page_url: Mapped[str | None] = mapped_column(Text)
+    http_headers: Mapped[str | None] = mapped_column(Text)  # JSON，存抓取时的请求头
     is_scraped: Mapped[bool] = mapped_column(Boolean, default=False)
     hls_ready: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
@@ -69,6 +70,7 @@ class Video(Base):
             "author": self.author_rel.username if self.author_rel else None,
             "source_url": self.source_url, "video_url": self.source_url,
             "page_url": self.page_url, "is_scraped": self.is_scraped,
+            "http_headers": self.http_headers,
             "hls_ready": self.hls_ready,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
@@ -109,3 +111,10 @@ class ScrapedVideoInfo(Base):
     tags: Mapped[str | None] = mapped_column(String(500))
     scraped_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     status: Mapped[str] = mapped_column(String(20), default="pending")
+    http_headers: Mapped[str | None] = mapped_column(Text)
+    # 下载状态
+    download_status: Mapped[str] = mapped_column(String(20), default="none")  # none/downloading/done/failed
+    download_progress: Mapped[int] = mapped_column(Integer, default=0)
+    local_filename: Mapped[str | None] = mapped_column(String(255))
+    is_m3u8: Mapped[bool] = mapped_column(Boolean, default=False)
+    video_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

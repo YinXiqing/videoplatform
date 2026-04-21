@@ -82,7 +82,7 @@ export default function AdminDashboard() {
                   <div key={v.id} className="flex items-center gap-4 px-6 py-3">
                     <div className="relative w-20 h-12 rounded-lg overflow-hidden bg-gray-900 shrink-0">
                       {v.cover_image
-                        ? <Image src={v.is_scraped && v.cover_image?.startsWith('http') ? v.cover_image : `/api/video/cover/${v.id}`} alt={v.title} fill className="object-cover" sizes="80px" />
+                        ? <Image src={`/api/video/cover/${v.id}`} alt={v.title} fill className="object-cover" sizes="80px" />
                         : <div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600" />}
                     </div>
                     <div className="flex-1 min-w-0">

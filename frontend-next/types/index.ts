@@ -1,60 +1,35 @@
 export interface User {
-  id: number
-  username: string
-  email: string
-  role: 'user' | 'admin'
-  is_active: boolean
-  created_at: string
+  id: number; username: string; email: string
+  role: 'user' | 'admin'; is_active: boolean; created_at: string
 }
 
 export interface Video {
-  id: number
-  title: string
-  description: string | null
-  tags: string[]
-  filename: string
-  cover_image: string | null
-  file_size: number | null
-  duration: number | null
-  status: 'pending' | 'approved' | 'rejected'
-  view_count: number
-  user_id: number
-  author: string | null
-  source_url: string | null
-  video_url: string | null
-  page_url: string | null
-  is_scraped: boolean
-  hls_ready: boolean
-  created_at: string
+  id: number; title: string; description: string | null; tags: string[]
+  filename: string; cover_image: string | null; file_size: number | null
+  duration: number | null; status: 'pending' | 'approved' | 'rejected'
+  view_count: number; user_id: number; author: string | null
+  source_url: string | null; video_url: string | null; page_url: string | null
+  is_scraped: boolean; hls_ready: boolean; created_at: string
 }
 
 export interface ScrapedVideo {
-  id: number
-  source_url: string
-  title: string | null
-  description: string | null
-  cover_url: string | null
-  video_url: string | null
-  tags: string | null
-  scraped_at: string | null
-  status: string
+  id: number; source_url: string; title: string | null; description: string | null
+  cover_url: string | null; video_url: string | null; tags: string | null
+  scraped_at: string | null; status: string; duration: number
+  download_status: 'none' | 'downloading' | 'done' | 'failed'
+  download_progress: number; local_filename: string | null
+  is_m3u8: boolean; video_id: number | null
 }
 
 export interface PaginatedResponse<T> {
-  total: number
-  pages: number
-  current_page: number
-  per_page: number
-  items?: T[]
+  total: number; pages: number; current_page: number; per_page: number; items?: T[]
 }
 
 export interface AuthContextType {
-  user: User | null
-  loading: boolean
+  user: User | null; loading: boolean
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
   register: (username: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   updateProfile: (data: Partial<Pick<User, 'email'>> & { password?: string }) => Promise<{ success: boolean; error?: string }>
-  isAdmin: () => boolean
-  isAuthenticated: boolean
+  isAdmin: () => boolean; isAuthenticated: boolean
 }

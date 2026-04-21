@@ -111,48 +111,47 @@ async def _check_url(url):
     except Exception:
         return False
 
-async def _get_fresh_url(page_url: str) -> str:
+async def _get_fresh_url(page_url: str) -> tuple[str, dict]:
+    """返回 (video_url, http_headers)"""
     if not page_url:
-        return ""
+        return "", {}
     try:
         import yt_dlp
-        ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, "socket_timeout": 15}
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
+        cookies_file = os.environ.get("YTDLP_COOKIES_FILE") or ""
+        ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, "socket_timeout": 20}
+        if proxy: ydl_opts["proxy"] = proxy
+        if cookies_file and os.path.exists(cookies_file): ydl_opts["cookiefile"] = cookies_file
         def _run():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(page_url, download=False)
             fmts = info.get("formats", [])
-            m3u8 = [f for f in fmts if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("url")]
-            direct = [f for f in fmts if f.get("url") and f.get("vcodec") != "none"]
-            url = (max(m3u8, key=lambda f: f.get("height") or 0)["url"] if m3u8
-                   else max(direct, key=lambda f: f.get("height") or 0)["url"] if direct
-                   else info.get("url", ""))
-            if url.endswith(".m3u") and not url.endswith(".m3u8"):
-                url += "8"
-            return url
+            m3u8 = [f for f in fmts if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("url") and f.get("vcodec") != "none"]
+            direct = [f for f in fmts if f.get("url") and f.get("vcodec") not in (None, "none")]
+            best = (max(m3u8, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if m3u8
+                    else max(direct, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if direct
+                    else {})
+            url = best.get("url") or info.get("url", "")
+            if url.endswith(".m3u") and not url.endswith(".m3u8"): url += "8"
+            headers = dict(best.get("http_headers") or {})
+            if page_url not in headers.get("Referer", ""):
+                headers["Referer"] = page_url
+            return url, headers
         return await asyncio.get_running_loop().run_in_executor(None, _run)
     except Exception:
-        return ""
+        return "", {}
 
 async def _refresh_url_bg(video_id, page_url):
     try:
-        import yt_dlp
+        import json
         from app.database import AsyncSessionLocal
-        ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, "socket_timeout": 15}
-        def _run():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(page_url, download=False)
-        info = await asyncio.get_running_loop().run_in_executor(None, _run)
-        fmts = info.get("formats", [])
-        m3u8 = [f for f in fmts if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("url")]
-        direct = [f for f in fmts if f.get("url") and f.get("vcodec") != "none"]
-        new_url = (max(m3u8, key=lambda f: f.get("height") or 0)["url"] if m3u8
-                   else max(direct, key=lambda f: f.get("height") or 0)["url"] if direct
-                   else info.get("url", ""))
-        if new_url.endswith(".m3u") and not new_url.endswith(".m3u8"):
-            new_url += "8"
+        new_url, new_headers = await _get_fresh_url(page_url)
         if new_url:
             async with AsyncSessionLocal() as db:
-                await db.execute(update(Video).where(Video.id == video_id).values(source_url=new_url))
+                await db.execute(update(Video).where(Video.id == video_id).values(
+                    source_url=new_url,
+                    http_headers=json.dumps(new_headers) if new_headers else None
+                ))
                 await db.commit()
     except Exception as e:
         logger.warning("url_refresh_failed", video_id=video_id, error=str(e))
@@ -218,8 +217,6 @@ async def stream_video(video_id: int, db: AsyncSession = Depends(get_db),
     if should_count:
         await db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
         await db.commit()
-    if video.is_scraped and video.source_url:
-        return {"is_external": True, "video_url": video.source_url}
     # HLS 就绪时返回 m3u8
     if video.hls_ready:
         return {"is_hls": True, "video_url": f"/api/video/hls/{video_id}/index.m3u8"}
@@ -245,6 +242,17 @@ async def serve_file(video_id: int, db: AsyncSession = Depends(get_db),
     return FileResponse(path, media_type="video/mp4")
 
 
+@router.get("/hls-file/{filepath:path}")
+async def serve_hls_file(filepath: str, db: AsyncSession = Depends(get_db),
+                         user: Optional[User] = Depends(get_optional_user)):
+    """服务任意 HLS 路径，如 hls/{scraped_id}/index.m3u8"""
+    path = settings.UPLOAD_FOLDER / filepath
+    if not path.exists():
+        raise HTTPException(404)
+    ct = "application/vnd.apple.mpegurl" if filepath.endswith(".m3u8") else "video/mp2t"
+    return FileResponse(path, media_type=ct)
+
+
 @router.get("/hls/{video_id}/{filename}")
 async def serve_hls(video_id: int, filename: str, db: AsyncSession = Depends(get_db),                    user: Optional[User] = Depends(get_optional_user)):
     video = await db.get(Video, video_id)
@@ -266,7 +274,24 @@ async def get_cover(video_id: int, db: AsyncSession = Depends(get_db)):
     if not video or not video.cover_image:
         raise HTTPException(404)
     if video.cover_image.startswith("http"):
-        return {"is_external": True, "cover_url": video.cover_image}
+        # 代理外链封面，避免防盗链问题
+        async def _gen():
+            try:
+                referer = video.page_url or video.cover_image
+                async with aiohttp.ClientSession() as s:
+                    async with s.get(video.cover_image,
+                                     headers={"User-Agent": "Mozilla/5.0", "Referer": referer},
+                                     ssl=False, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                        if r.status >= 400:
+                            return
+                        async for chunk in r.content.iter_chunked(8192):
+                            yield chunk
+            except Exception:
+                return
+        ct = "image/jpeg"
+        if video.cover_image.split("?")[0].endswith(".png"): ct = "image/png"
+        elif video.cover_image.split("?")[0].endswith(".webp"): ct = "image/webp"
+        return StreamingResponse(_gen(), media_type=ct)
     path = settings.UPLOAD_FOLDER / video.cover_image
     if not path.exists():
         raise HTTPException(404)
@@ -333,35 +358,24 @@ async def upload_video(title: str = Form(...), description: str = Form(""), tags
 
 @router.get("/refresh-url/{video_id}")
 async def refresh_video_url(video_id: int, db: AsyncSession = Depends(get_db)):
+    import json
     video = await db.get(Video, video_id)
     if not video or not video.is_scraped or not video.page_url:
         return {"video_url": video.source_url if video else None}
-    try:
-        import yt_dlp
-        ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, "socket_timeout": 15}
-        def _run():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(video.page_url, download=False)
-        info = await asyncio.get_running_loop().run_in_executor(None, _run)
-        fmts = info.get("formats", [])
-        m3u8 = [f for f in fmts if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("url")]
-        direct = [f for f in fmts if f.get("url") and f.get("vcodec") != "none"]
-        new_url = (max(m3u8, key=lambda f: f.get("height") or 0)["url"] if m3u8
-                   else max(direct, key=lambda f: f.get("height") or 0)["url"] if direct
-                   else info.get("url", ""))
-        if new_url.endswith(".m3u") and not new_url.endswith(".m3u8"):
-            new_url += "8"
-        if new_url:
-            await db.execute(update(Video).where(Video.id == video_id).values(source_url=new_url))
-            await db.commit()
-        return {"video_url": new_url or video.source_url}
-    except Exception as e:
-        return {"video_url": video.source_url, "error": str(e)}
+    new_url, new_headers = await _get_fresh_url(video.page_url)
+    if new_url:
+        await db.execute(update(Video).where(Video.id == video_id).values(
+            source_url=new_url,
+            http_headers=json.dumps(new_headers) if new_headers else video.http_headers
+        ))
+        await db.commit()
+    return {"video_url": new_url or video.source_url}
 
 
 @router.get("/proxy")
-async def proxy_stream(url: str):
+async def proxy_stream(url: str, referer: str = "", db: AsyncSession = Depends(get_db)):
     from urllib.parse import urlparse, urljoin, urlunparse
+    import json
     try:
         p = urlparse(url)
         if not p.hostname or BLOCKED.match(p.hostname) or p.scheme not in ("http", "https"):
@@ -371,19 +385,38 @@ async def proxy_stream(url: str):
     except Exception:
         raise HTTPException(400, "Invalid URL")
 
+    # 查找匹配的视频，获取存储的 http_headers
+    stored_headers: dict = {}
+    try:
+        video = (await db.execute(select(Video).where(Video.source_url == url))).scalars().first()
+        if video and video.http_headers:
+            stored_headers = json.loads(video.http_headers)
+    except Exception:
+        pass
+
+    effective_referer = referer or stored_headers.get("Referer") or f"{p.scheme}://{p.netloc}/"
+    user_agent = stored_headers.get("User-Agent") or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+
+    req_headers = {**stored_headers, "Referer": effective_referer, "User-Agent": user_agent, "Origin": f"{p.scheme}://{p.netloc}"}
+
     async def _gen():
         try:
             async with aiohttp.ClientSession() as s:
-                async with s.get(url, headers={"User-Agent": "Mozilla/5.0", "Referer": url}, ssl=False) as r:
+                async with s.get(url, headers=req_headers, ssl=False) as r:
                     if r.status >= 400:
                         return
                     ct = r.headers.get("Content-Type", "")
                     if "m3u8" in ct or ".m3u8" in url:
                         text = await r.text()
                         base = urlunparse((p.scheme, p.netloc, p.path, "", "", "")).rsplit("/", 1)[0] + "/"
-                        lines = [f"http://localhost:5000/api/video/proxy?url={urljoin(base, l.strip())}"
-                                 if l.strip() and not l.strip().startswith("#") else l
-                                 for l in text.splitlines()]
+                        lines = []
+                        for l in text.splitlines():
+                            stripped = l.strip()
+                            if stripped and not stripped.startswith("#"):
+                                seg_url = urljoin(base, stripped)
+                                lines.append(f"/api/video/proxy?url={seg_url}&referer={effective_referer}")
+                            else:
+                                lines.append(l)
                         yield "\n".join(lines).encode()
                     else:
                         async for chunk in r.content.iter_chunked(8192):
@@ -489,15 +522,17 @@ async def clear_history(db: AsyncSession = Depends(get_db), user: User = Depends
 async def download_video(video_id: int, db: AsyncSession = Depends(get_db),
                          user: Optional[User] = Depends(get_optional_user)):
     video = await db.get(Video, video_id)
-    if not video or video.is_scraped:
+    if not video:
         raise HTTPException(404)
     if video.status != "approved":
         if not user or (user.id != video.user_id and user.role != "admin"):
             raise HTTPException(403)
-    safe_title = re.sub(r'[\\/:*?"<>|]', '', video.title).strip() or f'video_{video_id}'
     path = settings.UPLOAD_FOLDER / video.filename
     if not path.exists():
         raise HTTPException(404)
+    safe_title = re.sub(r'[\\/:*?"<>|]', '', video.title).strip() or f'video_{video_id}'
     filename = f"{safe_title}.mp4"
-    return FileResponse(path, filename=filename, media_type="video/mp4",
-                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    from urllib.parse import quote
+    disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
+    return FileResponse(path, media_type="video/mp4",
+                        headers={"Content-Disposition": disposition})

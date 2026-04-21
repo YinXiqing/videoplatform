@@ -55,9 +55,9 @@ export default function AdminUsers() {
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索用户名或邮箱..."
-                  className="w-full pl-9 pr-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                  className="w-full h-9 pl-9 pr-4 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
               </div>
-              <Button type="submit" variant="outline" size="sm">搜索</Button>
+              <Button type="submit" variant="outline">搜索</Button>
             </form>
           </div>
         </Card>

@@ -14,6 +14,17 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 重置上次异常中断的下载任务
+    from app.database import AsyncSessionLocal
+    from app.models import ScrapedVideoInfo
+    from sqlalchemy import update as sa_update
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            sa_update(ScrapedVideoInfo)
+            .where(ScrapedVideoInfo.download_status == "downloading")
+            .values(download_status="failed", download_progress=0)
+        )
+        await db.commit()
     yield
 
 class LimitBodySizeMiddleware(BaseHTTPMiddleware):
@@ -59,5 +70,9 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(video_router)
     app.include_router(admin_router)
+
+    from fastapi.staticfiles import StaticFiles
+    settings.UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=str(settings.UPLOAD_FOLDER)), name="uploads")
 
     return app

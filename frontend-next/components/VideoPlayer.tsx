@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import api from '@/lib/api'
+import api, { BACKEND_URL } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import Toast from '@/components/Toast'
@@ -57,7 +57,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 
         if (data.is_hls || data.is_external) {
           const url = data.is_external
-            ? `/api/video/proxy?url=${encodeURIComponent(data.video_url)}`
+            ? `/api/video/proxy?url=${encodeURIComponent(data.video_url)}&referer=${encodeURIComponent(video.page_url || '')}`
             : data.video_url
 
           if (window.Hls?.isSupported()) {
@@ -100,9 +100,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
     setConfirm({ isOpen: false })
   }})
 
-  const coverSrc = video.is_scraped && video.cover_image?.startsWith('http')
-    ? video.cover_image
-    : `/api/video/cover/${video.id}`
+  const coverSrc = `/api/video/cover/${video.id}`
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 sm:gap-6">
@@ -129,7 +127,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
               <span>{video.created_at.slice(0, 10)}</span><span>•</span>
               <span>{dur(video.duration)}</span>
             </div>
-            <a href={`/api/video/download/${video.id}`}
+            <a href={`${BACKEND_URL}/api/video/download/${video.id}`}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#333] text-gray-700 dark:text-gray-300 text-sm rounded-lg transition-colors">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
               下载
