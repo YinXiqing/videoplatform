@@ -32,6 +32,13 @@ body {
   100% { transform: translateX(350%); }
 }
 
+@keyframes menuFadeIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .scrollbar-none {
   scrollbar-width: none;
 }

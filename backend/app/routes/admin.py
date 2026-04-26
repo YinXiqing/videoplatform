@@ -63,7 +63,10 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db), admin: U
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(404)
-    await db.execute(delete(Video).where(Video.user_id == user_id))
+    from app.routes.video import _delete_video
+    videos = (await db.execute(select(Video).where(Video.user_id == user_id))).scalars().all()
+    for v in videos:
+        await _delete_video(db, v)
     await db.delete(user)
     await db.commit()
     return {"message": "User deleted successfully"}

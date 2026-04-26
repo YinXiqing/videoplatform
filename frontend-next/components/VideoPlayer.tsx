@@ -83,9 +83,14 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
       .catch((e) => { setPlayError(e?.response?.status === 503 ? 'processing' : 'error') })
 
     const saveProgress = () => localStorage.setItem(`vp_${video.id}`, String(el.currentTime))
-    el.addEventListener('timeupdate', saveProgress)
+    let lastSave = 0
+    const throttledSave = () => {
+      const now = Date.now()
+      if (now - lastSave >= 5000) { lastSave = now; saveProgress() }
+    }
+    el.addEventListener('timeupdate', throttledSave)
     return () => {
-      el.removeEventListener('timeupdate', saveProgress)
+      el.removeEventListener('timeupdate', throttledSave)
       hlsRef.current?.destroy(); hlsRef.current = null
     }
   }, [video.id])

@@ -135,7 +135,7 @@ async def forgot_password(request: Request, data: ForgotPasswordIn, db: AsyncSes
     await db.execute(sa_delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
 
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(minutes=30)
+    expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=30)
     db.add(PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at))
     await db.commit()
 
@@ -168,7 +168,7 @@ async def forgot_password(request: Request, data: ForgotPasswordIn, db: AsyncSes
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPasswordIn, db: AsyncSession = Depends(get_db)):
-    from datetime import datetime
+    from datetime import datetime, timezone
     from app.models import PasswordResetToken
 
     if len(data.password) < 6:
@@ -178,7 +178,7 @@ async def reset_password(data: ResetPasswordIn, db: AsyncSession = Depends(get_d
         select(PasswordResetToken).where(PasswordResetToken.token == data.token, PasswordResetToken.used == False)
     )).scalar_one_or_none()
 
-    if not record or record.expires_at < datetime.utcnow():
+    if not record or record.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
         raise HTTPException(400, "链接无效或已过期")
 
     user = await db.get(User, record.user_id)
@@ -194,11 +194,11 @@ async def reset_password(data: ResetPasswordIn, db: AsyncSession = Depends(get_d
 
 @router.get("/reset-password/verify")
 async def verify_reset_token(token: str, db: AsyncSession = Depends(get_db)):
-    from datetime import datetime
+    from datetime import datetime, timezone
     from app.models import PasswordResetToken
     record = (await db.execute(
         select(PasswordResetToken).where(PasswordResetToken.token == token, PasswordResetToken.used == False)
     )).scalar_one_or_none()
-    if not record or record.expires_at < datetime.utcnow():
+    if not record or record.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
         raise HTTPException(400, "链接无效或已过期")
     return {"valid": True}

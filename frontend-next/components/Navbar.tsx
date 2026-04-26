@@ -28,14 +28,22 @@ export default function Navbar() {
   }, [])
 
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    if (!showUserMenu) return
+    const handleClick = (e: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
         setShowUserMenu(false)
       }
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowUserMenu(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleEsc)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleEsc)
+    }
+  }, [showUserMenu])
 
   const saveHistory = (term: string) => {
     if (!term.trim()) return
@@ -131,11 +139,15 @@ export default function Navbar() {
 
                   {/* 头像 + 下拉菜单 */}
                   <div className="relative" ref={userMenuRef}>
-                    <button onClick={() => setShowUserMenu(v => !v)} className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center hover:ring-2 hover:ring-primary-300 transition-all">
+                    <button 
+                      onClick={() => setShowUserMenu(v => !v)} 
+                      aria-label="用户菜单"
+                      aria-expanded={showUserMenu}
+                      className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center hover:ring-2 hover:ring-primary-300 transition-all">
                       <span className="text-sm font-semibold text-primary-700">{user.username.charAt(0).toUpperCase()}</span>
                     </button>
                     {showUserMenu && (
-                      <div className="absolute right-0 top-10 w-44 bg-white dark:bg-[#2a2a2a] rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 py-1 text-sm z-50">
+                      <div className="absolute right-0 top-10 w-44 bg-white dark:bg-[#2a2a2a] rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 py-1 text-sm z-50 opacity-0 translate-y-[-8px] [animation:menuFadeIn_0.15s_ease-out_forwards]">
                         <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700">
                           <p className="font-medium text-gray-900 dark:text-gray-100 truncate">{user.username}</p>
                         </div>

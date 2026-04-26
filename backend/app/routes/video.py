@@ -1,4 +1,4 @@
-import re, uuid, asyncio, aiofiles
+import os, re, uuid, asyncio, aiofiles
 from app.logger import logger
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -157,7 +157,7 @@ async def _refresh_url_bg(video_id, page_url):
     except Exception as e:
         logger.warning("url_refresh_failed", video_id=video_id, error=str(e))
 
-BLOCKED = re.compile(r"^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.0\.0\.0|::1)", re.I)
+BLOCKED = re.compile(r"^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|::1|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)", re.I)
 
 
 @router.get("/list")
@@ -202,7 +202,7 @@ async def stream_video(video_id: int, db: AsyncSession = Depends(get_db),
         if not user or (user.id != video.user_id and user.role != "admin"):
             raise HTTPException(403, "Access denied")
     # 同一用户1小时内不重复计数
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from app.models import WatchHistory
     should_count = True
     if user:
@@ -210,7 +210,7 @@ async def stream_video(video_id: int, db: AsyncSession = Depends(get_db),
             select(WatchHistory).where(
                 WatchHistory.user_id == user.id,
                 WatchHistory.video_id == video_id,
-                WatchHistory.watched_at >= datetime.utcnow() - timedelta(hours=1)
+                WatchHistory.watched_at >= datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
             )
         )).scalars().first()
         if recent:
@@ -221,6 +221,11 @@ async def stream_video(video_id: int, db: AsyncSession = Depends(get_db),
     # HLS 就绪时返回 m3u8
     if video.hls_ready:
         return {"is_hls": True, "video_url": f"/api/video/hls/{video_id}/index.m3u8"}
+    # 回退：直接播放原始文件
+    if not video.is_scraped:
+        path = settings.UPLOAD_FOLDER / video.filename
+        if path.exists():
+            return {"is_hls": False, "video_url": f"/api/video/file/{video_id}"}
     raise HTTPException(503, "视频正在处理中，请稍后再试")
 
 
@@ -313,20 +318,26 @@ async def upload_video(title: str = Form(...), description: str = Form(""), tags
         await f.write(content)
 
     cover_filename = None
+    video_path = settings.UPLOAD_FOLDER / filename
     if cover_content:
         cover_filename = f"cover_{uuid.uuid4().hex}.{_ext(cover.filename)}"
         async with aiofiles.open(settings.UPLOAD_FOLDER / cover_filename, "wb") as f:
             await f.write(cover_content)
+        duration = await _get_duration(video_path)
     else:
         auto_cover = f"cover_{uuid.uuid4().hex}.jpg"
-        if await _extract_cover(settings.UPLOAD_FOLDER / filename, auto_cover):
+        duration, cover_ok = await asyncio.gather(
+            _get_duration(video_path),
+            _extract_cover(video_path, auto_cover)
+        )
+        if cover_ok:
             cover_filename = auto_cover
 
     # 数据库写入失败时清理已写入的文件，保证一致性
     try:
         record = Video(title=title.strip(), description=description.strip(), tags=tags.strip(),
                        filename=filename, cover_image=cover_filename, file_size=len(content),
-                       duration=await _get_duration(settings.UPLOAD_FOLDER / filename),
+                       duration=duration,
                        user_id=user.id, status="pending")
         db.add(record)
         await db.commit()
@@ -344,7 +355,8 @@ async def upload_video(title: str = Form(...), description: str = Form(""), tags
 
 
 @router.get("/refresh-url/{video_id}")
-async def refresh_video_url(video_id: int, db: AsyncSession = Depends(get_db)):
+async def refresh_video_url(video_id: int, db: AsyncSession = Depends(get_db),
+                            user: User = Depends(get_current_user)):
     import json
     video = await db.get(Video, video_id)
     if not video or not video.is_scraped or not video.page_url:
@@ -471,8 +483,8 @@ async def record_history(video_id: int, db: AsyncSession = Depends(get_db),
         select(WatchHistory).where(WatchHistory.user_id == user.id, WatchHistory.video_id == video_id)
     )).scalar_one_or_none()
     if existing:
-        from datetime import datetime
-        existing.watched_at = datetime.utcnow()
+        from datetime import datetime, timezone
+        existing.watched_at = datetime.now(timezone.utc).replace(tzinfo=None)
     else:
         db.add(WatchHistory(user_id=user.id, video_id=video_id))
     await db.commit()
