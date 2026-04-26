@@ -13,17 +13,25 @@ export default function HistoryPage() {
   const [history, setHistory] = useState<{ watched_at: string; video: Video }[]>([])
   const [loading, setLoading] = useState(true)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
 
-  useEffect(() => { fetchHistory() }, [])
+  useEffect(() => { fetchHistory(page) }, [page])
 
-  const fetchHistory = async () => {
-    try { const res = await api.get('/video/history'); setHistory(res.data.history) }
-    catch {} finally { setLoading(false) }
+  const fetchHistory = async (p = 1) => {
+    setLoading(true)
+    try {
+      const res = await api.get('/video/history', { params: { page: p, per_page: 20 } })
+      setHistory(res.data.history)
+      setTotalPages(res.data.pages)
+    } catch {} finally { setLoading(false) }
   }
 
   const clearHistory = async () => {
     await api.delete('/video/history')
     setHistory([])
+    setPage(1)
+    setTotalPages(1)
     setConfirmClear(false)
   }
 
@@ -56,6 +64,7 @@ export default function HistoryPage() {
             <p>暂无观看记录</p>
           </div>
         ) : (
+          <>
           <div className="space-y-3">
             {history.map(({ watched_at, video }) => (
               <Link key={`${video.id}-${watched_at}`} href={`/video/${video.id}`}
@@ -75,6 +84,16 @@ export default function HistoryPage() {
               </Link>
             ))}
           </div>
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center gap-2 mt-4">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800">上一页</button>
+              <span className="text-sm text-gray-500 dark:text-gray-400">{page} / {totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800">下一页</button>
+            </div>
+          )}
+          </>
         )}
       </div>
 

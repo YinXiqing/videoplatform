@@ -585,7 +585,7 @@ async def get_stats(db: AsyncSession = Depends(get_db), _: User = Depends(requir
 # ── M3U8 代理（解决浏览器 CORS 限制）────────────────────────────────────────
 
 @router.get("/proxy")
-async def proxy_m3u8(url: str):
+async def proxy_m3u8(url: str, _: User = Depends(require_admin)):
     """代理转发 m3u8 及 ts 分片，解决浏览器 CORS 问题"""
     import urllib.parse
     proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or None
