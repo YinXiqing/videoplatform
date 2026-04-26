@@ -8,7 +8,7 @@ export const metadata = { title: '视频平台', description: '轻量级视频�
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="zh-CN" className="dark">
+    <html lang="zh-CN" className="dark" suppressHydrationWarning>
       <body>
         {/* 防止主题切换闪烁：在 JS 加载前读取 localStorage 并应用主题 */}
         <script dangerouslySetInnerHTML={{ __html: `

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import Link from 'next/link'
 import api from '@/lib/api'
 import VideoCard from '@/components/VideoCard'
@@ -43,13 +43,17 @@ function SearchResultsInner({ initialVideos, initialTotal, initialPages, initial
     finally { setLoading(false) }
   }, [query])
 
+  const initializedRef = useRef(false)
+
   useEffect(() => {
+    initializedRef.current = false
     setPage(1); setActiveTag(''); setSortBy('newest')
     search(1, 'newest', '')
+    initializedRef.current = true
   }, [query])
 
   useEffect(() => {
-    if (sortBy === 'newest' && page === 1 && !activeTag) return
+    if (!initializedRef.current) return
     search(page, sortBy, activeTag)
   }, [sortBy, page, activeTag])
 
@@ -57,20 +61,21 @@ function SearchResultsInner({ initialVideos, initialTotal, initialPages, initial
     <div className="min-h-screen bg-gray-50 dark:bg-[#0f0f0f] py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-6">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{query ? `"${query}" 的搜索结果` : '所有视频'}</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">共 {total} 个视频</p>
-        </div>
-
-        <div className="mb-6 space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500 dark:text-gray-400 shrink-0">排序：</span>
-            {[['newest', '最新'], ['popular', '最热'], ['oldest', '最早']].map(([val, label]) => (
-              <button key={val} onClick={() => { setSortBy(val); setPage(1) }}
-                className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${sortBy === val ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
-                {label}
-              </button>
-            ))}
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{query ? `"${query}" 的搜索结果` : '所有视频'}</h1>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">共 {total} 个视频</p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0 mt-1">
+              {[['newest', '最新'], ['popular', '最热']].map(([val, label]) => (
+                <button key={val} onClick={() => { setSortBy(val); setPage(1) }}
+                  className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${sortBy === val ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
+          {/* 标签筛选 */}
           {allTags.length > 0 && (
             <div className="relative">
               <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
