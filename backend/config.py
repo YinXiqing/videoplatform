@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from pathlib import Path
-import secrets
+import os, secrets
 
 BASE_DIR = Path(__file__).parent
 
@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     RESEND_FROM: str = "noreply@resend.dev"
     FRONTEND_URL: str = "http://localhost:3000"
+
+    @property
+    def YT_PROXY(self) -> str | None:
+        return os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or None
+
+    @property
+    def YT_COOKIES_FILE(self) -> str | None:
+        cf = os.environ.get("YTDLP_COOKIES_FILE") or ""
+        return cf if cf and Path(cf).exists() else None
 
     class Config:
         env_file = ".env"

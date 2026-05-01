@@ -116,7 +116,6 @@ class ResetPasswordIn(BaseModel):
 
 @router.post("/forgot-password")
 async def forgot_password(request: Request, data: ForgotPasswordIn, db: AsyncSession = Depends(get_db)):
-    from datetime import datetime, timedelta
     from app.models import PasswordResetToken
     from sqlalchemy import delete as sa_delete
 
@@ -163,7 +162,6 @@ async def forgot_password(request: Request, data: ForgotPasswordIn, db: AsyncSes
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPasswordIn, db: AsyncSession = Depends(get_db)):
-    from datetime import datetime, timezone
     from app.models import PasswordResetToken
 
     if len(data.password) < 6:
@@ -189,7 +187,6 @@ async def reset_password(data: ResetPasswordIn, db: AsyncSession = Depends(get_d
 
 @router.get("/reset-password/verify")
 async def verify_reset_token(token: str, db: AsyncSession = Depends(get_db)):
-    from datetime import datetime, timezone
     from app.models import PasswordResetToken
     record = (await db.execute(
         select(PasswordResetToken).where(PasswordResetToken.token == token, PasswordResetToken.used == False)

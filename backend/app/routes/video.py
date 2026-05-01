@@ -1,4 +1,4 @@
-import os, re, uuid, asyncio, aiofiles
+import re, uuid, asyncio, aiofiles
 from app.logger import logger
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
@@ -56,7 +56,7 @@ async def _transcode_hls(video_id: int, src_path):
         loop = asyncio.get_running_loop()
         is_mp4 = str(src_path).lower().endswith(".mp4")
         def _run():
-            codec_args = ["-codec:", "copy"] if is_mp4 else ["-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart"]
+            codec_args = ["-c", "copy"] if is_mp4 else ["-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart"]
             r = subprocess.run([
                 "ffmpeg", "-y", "-i", str(src_path),
                 *codec_args,
@@ -120,11 +120,9 @@ async def _get_fresh_url(page_url: str) -> tuple[str, dict]:
         return "", {}
     try:
         import yt_dlp
-        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
-        cookies_file = os.environ.get("YTDLP_COOKIES_FILE") or ""
         ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, "socket_timeout": 20}
-        if proxy: ydl_opts["proxy"] = proxy
-        if cookies_file and os.path.exists(cookies_file): ydl_opts["cookiefile"] = cookies_file
+        if settings.YT_PROXY: ydl_opts["proxy"] = settings.YT_PROXY
+        if settings.YT_COOKIES_FILE: ydl_opts["cookiefile"] = settings.YT_COOKIES_FILE
         def _run():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(page_url, download=False)
@@ -332,6 +330,11 @@ async def upload_video(title: str = Form(...), description: str = Form(""), tags
     if dedup_key in _upload_cache and _now - _upload_cache[dedup_key] < 300:
         raise HTTPException(429, "请勿重复提交，5 分钟内已上传相同文件")
     _upload_cache[dedup_key] = _now
+    # 定期清理过期条目，防止内存泄漏
+    if len(_upload_cache) > 1000:
+        cutoff = _now - 300
+        for k in [k for k, v in _upload_cache.items() if v < cutoff]:
+            del _upload_cache[k]
     
     # 读取并验证封面图片
     cover_content = None

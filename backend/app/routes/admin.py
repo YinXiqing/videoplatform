@@ -1,4 +1,4 @@
-import os, uuid, asyncio
+import uuid, asyncio
 from app.logger import logger
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -151,8 +151,6 @@ async def bulk_delete_videos(data: BulkIds, db: AsyncSession = Depends(get_db), 
 
 def _ydlp_extract(url):
     import yt_dlp, re as _re
-    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
-    cookies_file = os.environ.get("YTDLP_COOKIES_FILE") or ""
     ydl_opts = {
         "quiet": True, "no_warnings": True, "skip_download": True,
         "noplaylist": True, "socket_timeout": 20,
@@ -160,10 +158,10 @@ def _ydlp_extract(url):
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
         "extractor_args": {"youtube": {"skip": ["dash"]}},
     }
-    if proxy:
-        ydl_opts["proxy"] = proxy
-    if cookies_file and os.path.exists(cookies_file):
-        ydl_opts["cookiefile"] = cookies_file
+    if settings.YT_PROXY:
+        ydl_opts["proxy"] = settings.YT_PROXY
+    if settings.YT_COOKIES_FILE:
+        ydl_opts["cookiefile"] = settings.YT_COOKIES_FILE
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
     title = _re.sub(r"\s*\(\d+\)$", "", info.get("title", "") or "").strip() or "Untitled"
@@ -323,8 +321,6 @@ async def _do_download(scraped_id: int, source_url: str, cover_url: Optional[str
             await db.commit()
 
     try:
-        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
-        cookies_file = os.environ.get("YTDLP_COOKIES_FILE") or ""
         loop = asyncio.get_running_loop()
 
         # Step 1: yt-dlp 下载并合并
@@ -348,8 +344,8 @@ async def _do_download(scraped_id: int, source_url: str, cover_url: Optional[str
             "socket_timeout": 30,
             "progress_hooks": [progress_hook],
         }
-        if proxy: ydl_opts["proxy"] = proxy
-        if cookies_file and os.path.exists(cookies_file): ydl_opts["cookiefile"] = cookies_file
+        if settings.YT_PROXY: ydl_opts["proxy"] = settings.YT_PROXY
+        if settings.YT_COOKIES_FILE: ydl_opts["cookiefile"] = settings.YT_COOKIES_FILE
 
         def _download():
             import yt_dlp
@@ -557,7 +553,7 @@ async def get_stats(db: AsyncSession = Depends(get_db), _: User = Depends(requir
 async def proxy_m3u8(url: str, _: User = Depends(require_admin)):
     """代理转发 m3u8 及 ts 分片，解决浏览器 CORS 问题"""
     import urllib.parse
-    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or None
+    proxy = settings.YT_PROXY
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers={"User-Agent": "Mozilla/5.0", "Referer": url},

@@ -44,9 +44,8 @@ start_frontend() {
 
 stop_all() {
   echo "停止所有服务..."
-  pkill -f "uvicorn" 2>/dev/null || true
-  pkill -f "python.*run.py" 2>/dev/null || true
-  pkill -f "next" 2>/dev/null || true
+  pkill -f "uvicorn.*run:app" 2>/dev/null || true
+  pkill -f "next.*dev" 2>/dev/null || true
   echo "已停止"
 }
 
