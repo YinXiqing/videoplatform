@@ -8,7 +8,6 @@ from sqlalchemy import select, or_, func, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 import aiohttp
-from bs4 import BeautifulSoup
 import re
 from app.deps import get_db, get_current_user, require_admin
 from app.models import User, Video, ScrapedVideoInfo
@@ -192,22 +191,6 @@ def _ydlp_extract(url):
     if video_url.endswith(".m3u") and not video_url.endswith(".m3u8"):
         video_url += "8"
     return title, cover_url, video_url, duration, http_headers, bool(m3u8)
-
-
-async def _bs_tags(url):
-    try:
-        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or None
-        async with aiohttp.ClientSession() as s:
-            async with s.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=10), proxy=proxy, ssl=False) as r:
-                content = await r.read()
-        soup = BeautifulSoup(content, "html.parser")
-        tags = [t.get("content", "").strip() for t in soup.find_all("meta", property="video:tag") if t.get("content")]
-        if not tags:
-            kw = soup.find("meta", attrs={"name": "keywords"})
-            tags = [t.strip() for t in (kw.get("content", "") if kw else "").split(",") if t.strip()]
-        return ",".join(tags[:15])
-    except Exception:
-        return ""
 
 
 class ScrapeIn(BaseModel):
@@ -547,20 +530,6 @@ async def batch_download_scraped(data: BatchIds, db: AsyncSession = Depends(get_
     await db.commit()
     return {"message": f"已启动 {started} 个下载任务", "started": started}
 
-
-@router.post("/scraped/batch-publish")
-async def batch_publish(data: BatchIds, db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    """批量发布 = 批量触发下载，下载完成后手动发布"""
-    items = (await db.execute(select(ScrapedVideoInfo).where(
-        ScrapedVideoInfo.id.in_(data.video_ids),
-        ScrapedVideoInfo.download_status.in_(["none", "failed"])))).scalars().all()
-    started = 0
-    for s in items:
-        s.download_status = "downloading"; s.download_progress = 0
-        asyncio.create_task(_run_download(s.id, s.source_url, s.cover_url))
-        started += 1
-    await db.commit()
-    return {"message": f"已启动 {started} 个下载任务", "started": started}
 
 @router.post("/scraped/batch-delete")
 async def batch_delete_scraped(data: BatchIds, db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):

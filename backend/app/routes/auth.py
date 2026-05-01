@@ -2,17 +2,15 @@ import re, asyncio, secrets
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from jose import jwt
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from app.deps import get_db, get_current_user
 from app.models import User
+from app.logger import logger
 from config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-limiter = Limiter(key_func=get_remote_address)
 
 EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 
@@ -34,7 +32,6 @@ class ProfileUpdate(BaseModel):
     password: str | None = None
 
 @router.post("/register", status_code=201)
-@limiter.limit("5/minute")
 async def register(request: Request, data: RegisterIn, db: AsyncSession = Depends(get_db)):
     username = data.username.strip()
     email = data.email.strip().lower()
@@ -58,7 +55,6 @@ async def register(request: Request, data: RegisterIn, db: AsyncSession = Depend
     return {"message": "User registered successfully", "user": user.to_dict()}
 
 @router.post("/login")
-@limiter.limit("10/minute")
 async def login(request: Request, response: Response, data: LoginIn, db: AsyncSession = Depends(get_db)):
     ident = data.username.strip()
     result = await db.execute(select(User).where(or_(User.username == ident, User.email == ident)))
@@ -119,7 +115,6 @@ class ResetPasswordIn(BaseModel):
     password: str
 
 @router.post("/forgot-password")
-@limiter.limit("3/minute")
 async def forgot_password(request: Request, data: ForgotPasswordIn, db: AsyncSession = Depends(get_db)):
     from datetime import datetime, timedelta
     from app.models import PasswordResetToken
