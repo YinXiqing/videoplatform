@@ -97,12 +97,13 @@ async def _delete_video_files(video: Video):
 async def _delete_video(db: AsyncSession, video: Video):
     """删除视频：本地文件 + scraped记录 + watch_history + 数据库记录"""
     from sqlalchemy import delete as sa_delete
-    from app.models import ScrapedVideoInfo, WatchHistory
+    from app.models import ScrapedVideoInfo, WatchHistory, Favorite
     await _delete_video_files(video)
     await db.execute(sa_delete(ScrapedVideoInfo).where(ScrapedVideoInfo.video_id == video.id))
     if video.page_url:
         await db.execute(sa_delete(ScrapedVideoInfo).where(ScrapedVideoInfo.source_url == video.page_url))
     await db.execute(sa_delete(WatchHistory).where(WatchHistory.video_id == video.id))
+    await db.execute(sa_delete(Favorite).where(Favorite.video_id == video.id))
     await db.delete(video)
 
 
@@ -568,3 +569,49 @@ async def download_video(video_id: int, db: AsyncSession = Depends(get_db),
     disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
     return FileResponse(path, media_type="video/mp4",
                         headers={"Content-Disposition": disposition})
+
+
+@router.post("/favorite/{video_id}")
+async def toggle_favorite(video_id: int, db: AsyncSession = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    from app.models import Favorite
+    video = await db.get(Video, video_id)
+    if not video or video.status != "approved":
+        raise HTTPException(404, "Video not found")
+    existing = (await db.execute(
+        select(Favorite).where(Favorite.user_id == user.id, Favorite.video_id == video_id)
+    )).scalar_one_or_none()
+    if existing:
+        await db.delete(existing)
+        await db.commit()
+        return {"favorited": False}
+    db.add(Favorite(user_id=user.id, video_id=video_id))
+    await db.commit()
+    return {"favorited": True}
+
+
+@router.get("/favorites")
+async def get_favorites(page: int = 1, per_page: int = 20,
+                        db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    from app.models import Favorite
+    q = (select(Favorite)
+         .options(selectinload(Favorite.video).selectinload(Video.author_rel))
+         .where(Favorite.user_id == user.id)
+         .order_by(Favorite.created_at.desc()))
+    total = (await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar_one()
+    items = (await db.execute(q.offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    return {
+        "favorites": [{"created_at": h.created_at.isoformat(), "video": h.video.to_dict()}
+                      for h in items if h.video],
+        "total": total, "pages": -(-total // per_page), "current_page": page
+    }
+
+
+@router.get("/favorited/{video_id}")
+async def check_favorited(video_id: int, db: AsyncSession = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    from app.models import Favorite
+    existing = (await db.execute(
+        select(Favorite).where(Favorite.user_id == user.id, Favorite.video_id == video_id)
+    )).scalar_one_or_none()
+    return {"favorited": existing is not None}
