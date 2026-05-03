@@ -44,6 +44,8 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 	} | null>(null);
 	const [confirm, setConfirm] = useState<ConfirmState>({ isOpen: false });
 	const [favorited, setFavorited] = useState(false);
+	const [following, setFollowing] = useState(false);
+	const [followerCount, setFollowerCount] = useState(0);
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const hlsRef = useRef<any>(null);
 
@@ -142,6 +144,28 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 			.catch(() => {});
 	}, [video.id, user]);
 
+	useEffect(() => {
+		if (!user) return;
+		api
+			.get(`/follow/${video.user_id}/status`)
+			.then((r) => setFollowing(r.data.following))
+			.catch(() => {});
+		api
+			.get(`/follow/${video.user_id}/count`)
+			.then((r) => setFollowerCount(r.data.followers))
+			.catch(() => {});
+	}, [video.user_id, user]);
+
+	const toggleFollow = async () => {
+		try {
+			const res = await api.post(`/follow/${video.user_id}`);
+			setFollowing(res.data.following);
+			showToast(res.data.following ? "已关注" : "已取消关注");
+		} catch {
+			showToast("操作失败", "error");
+		}
+	};
+
 	const toggleFavorite = async () => {
 		try {
 			const res = await api.post(`/video/favorite/${video.id}`);
@@ -152,7 +176,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 		}
 	};
 
-	const handleApprove = () =>
+const handleApprove = () =>
 		setConfirm({
 			isOpen: true,
 			type: "info",
@@ -272,6 +296,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 									{favorited ? "已收藏" : "收藏"}
 								</button>
 							)}
+
 							{user ? (
 								<a
 									href={`${BACKEND_URL}/api/video/download/${video.id}`}
@@ -344,9 +369,26 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 								{video.author?.charAt(0).toUpperCase() || "U"}
 							</span>
 						</div>
-						<p className="font-medium text-gray-900 dark:text-gray-100">
-							{video.author || "未知用户"}
-						</p>
+						<div>
+							<p className="font-medium text-gray-900 dark:text-gray-100">
+								{video.author || "未知用户"}
+							</p>
+							<p className="text-xs text-gray-400 dark:text-gray-500">
+								{followerCount} 位粉丝
+							</p>
+						</div>
+						{user && user.id !== video.user_id && (
+							<button
+								onClick={toggleFollow}
+								className={`ml-auto px-3 py-1.5 text-sm rounded-lg transition-colors ${
+									following
+										? "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400"
+										: "bg-primary-600 text-white hover:bg-primary-700"
+								}`}
+							>
+								{following ? "已关注" : "关注"}
+							</button>
+						)}
 					</div>
 
 					{video.description && (

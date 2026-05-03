@@ -235,7 +235,9 @@ export default function Navbar() {
 												</div>
 												{[
 													{ href: "/history", label: "观看历史" },
-													{ href: "/favorites", label: "我的收藏" },
+											{ href: "/subscriptions", label: "订阅" },
+											{ href: "/following", label: "我的关注" },
+											{ href: "/favorites", label: "我的收藏" },
 													{ href: "/my-videos", label: "我的视频" },
 													{ href: "/profile", label: "个人资料" },
 													...(isAdmin()

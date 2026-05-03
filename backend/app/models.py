@@ -109,6 +109,15 @@ class Favorite(Base):
     video: Mapped["Video"] = relationship("Video", lazy="select")
 
 
+class Follow(Base):
+    __tablename__ = "follows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    follower_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    followed_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+
+
 class ScrapedVideoInfo(Base):
     __tablename__ = "scraped_videos"
 

@@ -72,6 +72,8 @@ def create_app() -> FastAPI:
     app.include_router(video_router)
     app.include_router(admin_router)
     app.include_router(health_router)
+    from app.routes.follow import router as follow_router
+    app.include_router(follow_router)
 
     from fastapi.staticfiles import StaticFiles
     settings.UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)

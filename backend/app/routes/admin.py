@@ -571,6 +571,40 @@ async def get_stats(db: AsyncSession = Depends(get_db), _: User = Depends(requir
             "pending_videos": pending, "approved_videos": approved, "total_views": int(total_views)}
 
 
+@router.get("/trends")
+async def get_trends(db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
+    """最近 7 天每日新增视频和播放量趋势"""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import cast, Date
+
+    today = datetime.now(timezone.utc).replace(tzinfo=None).date()
+    video_trends = []
+    view_trends = []
+    labels = []
+
+    for i in range(6, -1, -1):
+        day = today - timedelta(days=i)
+        labels.append(day.strftime("%m-%d"))
+        # 当天新增视频数
+        day_start = datetime(day.year, day.month, day.day)
+        day_end = day_start + timedelta(days=1)
+        video_count = (await db.execute(
+            select(func.count(Video.id)).where(
+                Video.created_at >= day_start, Video.created_at < day_end
+            )
+        )).scalar_one()
+        video_trends.append(video_count)
+        # 当天新增播放量（这里简化统计，取当天创建视频的播放量总和）
+        view_count = (await db.execute(
+            select(func.coalesce(func.sum(Video.view_count), 0)).where(
+                Video.created_at >= day_start, Video.created_at < day_end
+            )
+        )).scalar_one()
+        view_trends.append(int(view_count))
+
+    return {"labels": labels, "video_trends": video_trends, "view_trends": view_trends}
+
+
 # ── M3U8 代理（解决浏览器 CORS 限制）────────────────────────────────────────
 
 @router.get("/proxy")

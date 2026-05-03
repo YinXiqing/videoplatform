@@ -72,14 +72,24 @@ export default function AdminDashboard() {
 	const [pendingVideos, setPendingVideos] = useState<VideoType[]>([]);
 	const [loading, setLoading] = useState(true);
 
+	const [trends, setTrends] = useState<{
+		labels: string[];
+		video_trends: number[];
+		view_trends: number[];
+	} | null>(null);
+
 	useEffect(() => {
 		Promise.all([
 			api.get("/admin/stats").then((r) => setStats(r.data)),
+			api.get("/admin/trends").then((r) => setTrends(r.data)),
 			api
 				.get("/admin/videos", { params: { status: "pending", per_page: 5 } })
 				.then((r) => setPendingVideos(r.data.videos)),
 		]).finally(() => setLoading(false));
 	}, []);
+
+	const maxVideo = Math.max(...(trends?.video_trends ?? [1]), 1);
+	const maxView = Math.max(...(trends?.view_trends ?? [1]), 1);
 
 	return (
 		<RequireAdmin>
@@ -115,6 +125,50 @@ export default function AdminDashboard() {
 						</Link>
 					))}
 				</div>
+
+				{/* 趋势图表 */}
+				{trends && (
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+						<Card>
+							<CardHeader>
+								<CardTitle className="text-sm">近 7 天新增视频</CardTitle>
+							</CardHeader>
+							<CardContent>
+								<div className="flex items-end gap-2 h-32">
+									{trends.labels.map((label, i) => (
+										<div key={label} className="flex-1 flex flex-col items-center gap-1">
+											<span className="text-xs text-gray-500">{trends.video_trends[i]}</span>
+											<div
+												className="w-full bg-primary-500 rounded-t transition-all"
+												style={{ height: `${(trends.video_trends[i] / maxVideo) * 100}%`, minHeight: trends.video_trends[i] > 0 ? '4px' : '0' }}
+											/>
+											<span className="text-xs text-gray-400">{label}</span>
+										</div>
+									))}
+								</div>
+							</CardContent>
+						</Card>
+						<Card>
+							<CardHeader>
+								<CardTitle className="text-sm">近 7 天新增播放量</CardTitle>
+							</CardHeader>
+							<CardContent>
+								<div className="flex items-end gap-2 h-32">
+									{trends.labels.map((label, i) => (
+										<div key={label} className="flex-1 flex flex-col items-center gap-1">
+											<span className="text-xs text-gray-500">{trends.view_trends[i]}</span>
+											<div
+												className="w-full bg-green-500 rounded-t transition-all"
+												style={{ height: `${(trends.view_trends[i] / maxView) * 100}%`, minHeight: trends.view_trends[i] > 0 ? '4px' : '0' }}
+											/>
+											<span className="text-xs text-gray-400">{label}</span>
+										</div>
+									))}
+								</div>
+							</CardContent>
+						</Card>
+					</div>
+				)}
 
 				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 					{/* 待审核视频 */}
