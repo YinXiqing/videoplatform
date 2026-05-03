@@ -136,6 +136,66 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 		};
 	}, [video.id, user, fetchRelated]);
 
+	// 键盘快捷键
+	useEffect(() => {
+		const el = videoRef.current;
+		if (!el) return;
+		const handleKey = (e: KeyboardEvent) => {
+			const tag = (e.target as HTMLElement).tagName;
+			if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+			switch (e.key) {
+				case " ":
+					e.preventDefault();
+					el.paused ? el.play().catch(() => {}) : el.pause();
+					break;
+				case "ArrowLeft":
+					e.preventDefault();
+					el.currentTime = Math.max(0, el.currentTime - 10);
+					break;
+				case "ArrowRight":
+					e.preventDefault();
+					el.currentTime = Math.min(el.duration || 0, el.currentTime + 10);
+					break;
+				case "f":
+				case "F":
+					e.preventDefault();
+					if (document.fullscreenElement) document.exitFullscreen();
+					else el.requestFullscreen();
+					break;
+			}
+		};
+		document.addEventListener("keydown", handleKey);
+		return () => document.removeEventListener("keydown", handleKey);
+	}, []);
+
+	// 移动端手势
+	useEffect(() => {
+		const el = videoRef.current;
+		if (!el) return;
+		let sx = 0, sy = 0, mx = 0, my = 0;
+		const onTouchStart = (e: TouchEvent) => {
+			sx = e.touches[0].clientX;
+			sy = e.touches[0].clientY;
+		};
+		const onTouchEnd = (e: TouchEvent) => {
+			mx = e.changedTouches[0].clientX - sx;
+			my = e.changedTouches[0].clientY - sy;
+			const absX = Math.abs(mx), absY = Math.abs(my);
+			if (absX < 30 && absY < 30) return;
+			if (absX > absY) {
+				// 水平滑动 -> 快进/快退
+				if (mx > 0) el.currentTime = Math.min(el.duration || 0, el.currentTime + 10);
+				else el.currentTime = Math.max(0, el.currentTime - 10);
+			}
+		};
+		el.addEventListener("touchstart", onTouchStart, { passive: true });
+		el.addEventListener("touchend", onTouchEnd, { passive: true });
+		return () => {
+			el.removeEventListener("touchstart", onTouchStart);
+			el.removeEventListener("touchend", onTouchEnd);
+		};
+	}, []);
+
 	useEffect(() => {
 		if (!user) return;
 		api
