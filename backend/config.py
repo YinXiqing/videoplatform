@@ -1,12 +1,13 @@
+import json
 from pydantic_settings import BaseSettings
 from pathlib import Path
-import os, secrets
+import os
 
 BASE_DIR = Path(__file__).parent
 
 class Settings(BaseSettings):
-    SECRET_KEY: str = "dev-secret-key-change-in-production"
-    JWT_SECRET_KEY: str = "jwt-secret-key-change-in-production"
+    SECRET_KEY: str
+    JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_HOURS: int = 24
 
@@ -17,11 +18,7 @@ class Settings(BaseSettings):
     ALLOWED_VIDEO_EXTENSIONS: set = {"mp4", "avi", "mkv", "mov", "wmv", "flv"}
     ALLOWED_IMAGE_EXTENSIONS: set = {"jpg", "jpeg", "png", "gif", "webp"}
 
-    CORS_ORIGINS: list = [
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://192.168.1.101:3000",
-    ]
+    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
     RESEND_API_KEY: str = ""
     RESEND_FROM: str = "noreply@resend.dev"
@@ -41,13 +38,4 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 settings = Settings()
-
-# 安全警告：生产环境必须使用强密钥
-if settings.SECRET_KEY == "dev-secret-key-change-in-production":
-    print("⚠️  WARNING: Using default SECRET_KEY! Generate a secure key with:")
-    print(f"   SECRET_KEY={secrets.token_urlsafe(32)}")
-if settings.JWT_SECRET_KEY == "jwt-secret-key-change-in-production":
-    print("⚠️  WARNING: Using default JWT_SECRET_KEY! Generate a secure key with:")
-    print(f"   JWT_SECRET_KEY={secrets.token_urlsafe(32)}")
-
 settings.UPLOAD_FOLDER.mkdir(exist_ok=True)

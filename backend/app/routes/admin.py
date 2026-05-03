@@ -1,7 +1,8 @@
 import uuid, asyncio
 from app.logger import logger
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from imageio_ffmpeg import get_ffmpeg_exe
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select, or_, func, update, delete
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 @router.get("/users")
-async def get_users(page: int = 1, per_page: int = 20, search: str = "",
+async def get_users(page: int = 1, per_page: int = Query(20, le=100), search: str = "",
                     db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
     q = select(User)
     if search:
@@ -62,10 +63,23 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db), admin: U
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(404)
-    from app.routes.video import _delete_video
+    from app.routes.video import _delete_video_files
+    from app.models import ScrapedVideoInfo, WatchHistory, Favorite
+    from sqlalchemy import delete as sa_delete
+
     videos = (await db.execute(select(Video).where(Video.user_id == user_id))).scalars().all()
-    for v in videos:
-        await _delete_video(db, v)
+    video_ids = [v.id for v in videos]
+
+    # 批量删除关联记录（3 条 SQL 代替 N×3 条）
+    if video_ids:
+        await db.execute(sa_delete(ScrapedVideoInfo).where(ScrapedVideoInfo.video_id.in_(video_ids)))
+        await db.execute(sa_delete(WatchHistory).where(WatchHistory.video_id.in_(video_ids)))
+        await db.execute(sa_delete(Favorite).where(Favorite.video_id.in_(video_ids)))
+        # 删除本地文件（文件系统无法批量，但每个只需要一次）
+        for v in videos:
+            await _delete_video_files(v)
+        # 批量删除视频
+        await db.execute(sa_delete(Video).where(Video.id.in_(video_ids)))
     await db.delete(user)
     await db.commit()
     return {"message": "User deleted successfully"}
@@ -74,7 +88,7 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db), admin: U
 # ── Videos ────────────────────────────────────────────────────────────────────
 
 @router.get("/videos")
-async def get_all_videos(page: int = 1, per_page: int = 20, status: str = "all", search: str = "",
+async def get_all_videos(page: int = 1, per_page: int = Query(20, le=100), status: str = "all", search: str = "",
                          db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
     q = select(Video).options(selectinload(Video.author_rel))
     if status != "all" and status in ("pending", "approved", "rejected"):
@@ -288,7 +302,7 @@ async def scrape_videos_batch(data: BatchScrapeIn, db: AsyncSession = Depends(ge
 
 
 @router.get("/scraped")
-async def get_scraped_videos(page: int = 1, per_page: int = 20, status: str = "pending",
+async def get_scraped_videos(page: int = 1, per_page: int = Query(20, le=100), status: str = "pending",
                              db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
     q = select(ScrapedVideoInfo)
     if status != "all":
@@ -380,7 +394,7 @@ async def _do_download(scraped_id: int, source_url: str):
         # Step 2: ffmpeg 切 HLS
         hls_dir.mkdir(parents=True, exist_ok=True)
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y", "-i", str(mp4_path),
+            get_ffmpeg_exe(), "-y", "-i", str(mp4_path),
             "-c", "copy", "-hls_time", "6", "-hls_playlist_type", "vod",
             "-hls_segment_filename", str(hls_dir / "seg%03d.ts"),
             str(hls_dir / "index.m3u8"),
@@ -414,7 +428,8 @@ async def start_download(scraped_id: int, db: AsyncSession = Depends(get_db), _:
     scraped.download_status = "downloading"
     scraped.download_progress = 0
     await db.commit()
-    asyncio.create_task(_run_download(scraped_id, scraped.source_url))
+    from app.tasks import download_scraped_video
+    asyncio.create_task(download_scraped_video(scraped_id, scraped.source_url))
     return {"message": "下载任务已启动"}
 
 
@@ -436,13 +451,8 @@ async def import_scraped_video(scraped_id: int, data: ImportIn = ImportIn(),
     mp4_path = settings.UPLOAD_FOLDER / scraped.local_filename
     duration = 0
     if mp4_path.exists():
-        try:
-            import subprocess as _sp, json as _json
-            r = _sp.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(mp4_path)],
-                        capture_output=True, text=True, timeout=10)
-            duration = int(float(_json.loads(r.stdout)["format"]["duration"]))
-        except Exception:
-            pass
+        from app.routes.video import _get_duration
+        duration = await _get_duration(mp4_path)
 
     # 导入阶段下载封面到本地，确保 Video.cover_image 永远是本地文件
     cover_value = scraped.cover_url
@@ -534,7 +544,8 @@ async def batch_download_scraped(data: BatchIds, db: AsyncSession = Depends(get_
     started = 0
     for s in items:
         s.download_status = "downloading"; s.download_progress = 0
-        asyncio.create_task(_run_download(s.id, s.source_url))
+        from app.tasks import download_scraped_video
+        asyncio.create_task(download_scraped_video(s.id, s.source_url))
         started += 1
     await db.commit()
     return {"message": f"已启动 {started} 个下载任务", "started": started}

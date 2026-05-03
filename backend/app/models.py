@@ -46,9 +46,9 @@ class Video(Base):
     cover_image: Mapped[str | None] = mapped_column(String(255))
     file_size: Mapped[int | None] = mapped_column(BigInteger)
     duration: Mapped[int | None] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(20), default="pending")
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     view_count: Mapped[int] = mapped_column(Integer, default=0)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     source_url: Mapped[str | None] = mapped_column(Text)
     page_url: Mapped[str | None] = mapped_column(Text)
     http_headers: Mapped[str | None] = mapped_column(Text)  # JSON，存抓取时的请求头
@@ -92,7 +92,7 @@ class WatchHistory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    video_id: Mapped[int] = mapped_column(Integer, ForeignKey("videos.id"), nullable=False)
+    video_id: Mapped[int] = mapped_column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
     watched_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), index=True)
 
     video: Mapped["Video"] = relationship("Video", lazy="select")
@@ -103,7 +103,7 @@ class Favorite(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    video_id: Mapped[int] = mapped_column(Integer, ForeignKey("videos.id"), nullable=False)
+    video_id: Mapped[int] = mapped_column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     video: Mapped["Video"] = relationship("Video", lazy="select")

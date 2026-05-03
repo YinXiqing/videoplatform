@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: videoplatform
+      POSTGRES_PASSWORD: videoplatform
+      POSTGRES_DB: videoplatform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U videoplatform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://videoplatform:videoplatform@db/videoplatform
+      SECRET_KEY: ${SECRET_KEY:-9004ca1d322b1b792121cc5dac88b0cbe041855d22e26bb0a349e07571067f60}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-59df6a7f9855fc48ab2a02ab37c8509a5f0d4e988585d90ee334891dbb92fe49}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      FRONTEND_URL: http://localhost:3000
+      CORS_ORIGINS: '["http://localhost:3000"]'
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend-next
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - BACKEND_URL=http://backend:5000
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:5000
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  uploads:

@@ -1,7 +1,8 @@
+from imageio_ffmpeg import get_ffmpeg_exe
 import re, uuid, asyncio, aiofiles
 from app.logger import logger
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, or_, func, update
@@ -16,16 +17,43 @@ router = APIRouter(prefix="/api/video", tags=["video"])
 
 def _ext(fn): return fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
 
+
+# 音视频/图片魔术字节校验
+_VIDEO_MAGIC = [
+    lambda d: d[4:8] == b"ftyp" if len(d) > 8 else False,
+    lambda d: d[:4] == b"RIFF" and d[8:12] == b"AVI " if len(d) > 12 else False,
+    lambda d: d[:4] == b"\x1a\x45\xdf\xa3" if len(d) > 4 else False,
+    lambda d: d[:4] == b"0\x26\xb2\x75" if len(d) > 4 else False,
+    lambda d: d[:3] == b"FLV" if len(d) > 3 else False,
+]
+_IMAGE_MAGIC = [
+    lambda d: d[:3] == b"\xff\xd8\xff" if len(d) > 3 else False,
+    lambda d: d[:4] == b"\x89PNG" if len(d) > 4 else False,
+    lambda d: d[:4] in (b"GIF8",) if len(d) > 4 else False,
+    lambda d: d[:4] == b"RIFF" and d[8:12] == b"WEBP" if len(d) > 12 else False,
+]
+
+
+def _check_video_magic(data: bytes) -> bool:
+    return any(check(data) for check in _VIDEO_MAGIC)
+
+
+def _check_image_magic(data: bytes) -> bool:
+    return any(check(data) for check in _IMAGE_MAGIC)
+
 async def _get_duration(path) -> int:
     try:
+        import subprocess, re as _re
         loop = asyncio.get_running_loop()
         def _run():
-            import subprocess, json
             r = subprocess.run(
-                ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(path)],
+                [get_ffmpeg_exe(), "-i", str(path)],
                 capture_output=True, text=True, timeout=10
             )
-            return int(float(json.loads(r.stdout)["format"]["duration"]))
+            m = _re.search(r"Duration: (\d+):(\d+):(\d+)", r.stderr)
+            if m:
+                return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+            return 0
         return await loop.run_in_executor(None, _run)
     except Exception:
         return 0
@@ -36,7 +64,7 @@ async def _extract_cover(video_path, cover_filename) -> bool:
         def _run():
             import subprocess
             r = subprocess.run(
-                ["ffmpeg", "-y", "-i", str(video_path), "-ss", "00:00:01",
+                [get_ffmpeg_exe(), "-y", "-i", str(video_path), "-ss", "00:00:01",
                  "-vframes", "1", "-q:v", "2", str(settings.UPLOAD_FOLDER / cover_filename)],
                 capture_output=True, timeout=15
             )
@@ -58,7 +86,7 @@ async def _transcode_hls(video_id: int, src_path):
         def _run():
             codec_args = ["-c", "copy"] if is_mp4 else ["-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart"]
             r = subprocess.run([
-                "ffmpeg", "-y", "-i", str(src_path),
+                get_ffmpeg_exe(), "-y", "-i", str(src_path),
                 *codec_args,
                 "-start_number", "0",
                 "-hls_time", "10",
@@ -158,7 +186,7 @@ async def _refresh_url_bg(video_id, page_url):
     except Exception as e:
         logger.warning("url_refresh_failed", video_id=video_id, error=str(e))
 
-BLOCKED = re.compile(r"^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|::1|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)", re.I)
+BLOCKED = re.compile(r"^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|\[::\]|::1|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)", re.I)
 
 # 未登录用户播放量去重：{(ip, video_id): timestamp}
 _ip_view_cache: dict[tuple, float] = {}
@@ -168,7 +196,7 @@ _upload_cache: dict[tuple, float] = {}
 
 
 @router.get("/list")
-async def list_videos(page: int = 1, per_page: int = 12, search: str = "", tag: str = "",
+async def list_videos(page: int = 1, per_page: int = Query(12, le=100), search: str = "", tag: str = "",
                       sort: str = "newest", status: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     q = select(Video).options(selectinload(Video.author_rel))
     q = q.where(Video.status == status) if status else q.where(Video.status == "approved")
@@ -195,7 +223,8 @@ async def get_video_detail(video_id: int, db: AsyncSession = Depends(get_db),
             raise HTTPException(404, "Video not found")
     if video.is_scraped and video.page_url and video.source_url:
         if not await _check_url(video.source_url):
-            asyncio.create_task(_refresh_url_bg(video_id, video.page_url))
+            from app.tasks import refresh_video_url
+            asyncio.create_task(refresh_video_url.kiq(video_id, video.page_url))
     return {"video": video.to_dict()}
 
 
@@ -223,7 +252,8 @@ async def stream_video(request: Request, video_id: int, db: AsyncSession = Depen
         if recent:
             should_count = False
     else:
-        ip = request.client.host if request.client else "unknown"
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
         key = (ip, video_id)
         now = time.time()
         if key in _ip_view_cache and now - _ip_view_cache[key] < 3600:
@@ -311,48 +341,70 @@ async def get_cover(video_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/upload", status_code=201)
-async def upload_video(title: str = Form(...), description: str = Form(""), tags: str = Form(""),
+async def upload_video(title: str = Form(..., max_length=255), description: str = Form("", max_length=5000), tags: str = Form(""),
                        video: UploadFile = File(...), cover: Optional[UploadFile] = File(None),
                        db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     # 验证扩展名
-    if _ext(video.filename) not in settings.ALLOWED_VIDEO_EXTENSIONS:
+    ext = _ext(video.filename)
+    if ext not in settings.ALLOWED_VIDEO_EXTENSIONS:
         raise HTTPException(400, "Invalid video format")
-    
-    # 读取并验证视频文件
-    content = await video.read()
-    if len(content) > settings.MAX_UPLOAD_SIZE:
-        raise HTTPException(413, "File too large")
 
-    # 防重复提交：同一用户 5 分钟内相同文件拒绝
+    # 读取第一个分块做魔术字节校验
+    first_chunk = await video.read(16 * 1024)
+    if not first_chunk or not _check_video_magic(first_chunk):
+        raise HTTPException(400, "File content does not match video format")
+
+    # 流式写入视频文件
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    video_path = settings.UPLOAD_FOLDER / filename
+    total = len(first_chunk)
+    hash_bytes = bytearray(first_chunk[:1024 * 1024])
+    try:
+        async with aiofiles.open(video_path, "wb") as f:
+            await f.write(first_chunk)
+            while chunk := await video.read(64 * 1024):
+                total += len(chunk)
+                if total > settings.MAX_UPLOAD_SIZE:
+                    raise HTTPException(413, "File too large")
+                await f.write(chunk)
+                if len(hash_bytes) < 1024 * 1024:
+                    hash_bytes.extend(chunk[:1024 * 1024 - len(hash_bytes)])
+    except HTTPException:
+        if video_path.exists(): video_path.unlink()
+        raise
+    except Exception:
+        if video_path.exists(): video_path.unlink()
+        raise HTTPException(500, "Upload failed")
+
+    # 防重复提交
     import hashlib, time as _time
-    content_hash = hashlib.md5(content[:1024 * 1024]).hexdigest()  # 只 hash 前 1MB，够快
+    content_hash = hashlib.md5(bytes(hash_bytes)).hexdigest()
     dedup_key = (user.id, content_hash)
     _now = _time.time()
     if dedup_key in _upload_cache and _now - _upload_cache[dedup_key] < 300:
+        video_path.unlink()
         raise HTTPException(429, "请勿重复提交，5 分钟内已上传相同文件")
     _upload_cache[dedup_key] = _now
-    # 定期清理过期条目，防止内存泄漏
     if len(_upload_cache) > 1000:
         cutoff = _now - 300
         for k in [k for k, v in _upload_cache.items() if v < cutoff]:
             del _upload_cache[k]
-    
+
     # 读取并验证封面图片
     cover_content = None
     if cover and cover.filename:
         if _ext(cover.filename) not in settings.ALLOWED_IMAGE_EXTENSIONS:
+            video_path.unlink()
             raise HTTPException(400, "Invalid cover image format")
         cover_content = await cover.read()
-        if len(cover_content) > 10 * 1024 * 1024:  # 10MB 限制
+        if not cover_content or not _check_image_magic(cover_content):
+            video_path.unlink()
+            raise HTTPException(400, "Invalid cover image content")
+        if len(cover_content) > 10 * 1024 * 1024:
+            video_path.unlink()
             raise HTTPException(413, "Cover image too large")
-    
-    # 所有验证通过后再保存文件
-    filename = f"{uuid.uuid4().hex}.{_ext(video.filename)}"
-    async with aiofiles.open(settings.UPLOAD_FOLDER / filename, "wb") as f:
-        await f.write(content)
 
     cover_filename = None
-    video_path = settings.UPLOAD_FOLDER / filename
     if cover_content:
         cover_filename = f"cover_{uuid.uuid4().hex}.{_ext(cover.filename)}"
         async with aiofiles.open(settings.UPLOAD_FOLDER / cover_filename, "wb") as f:
@@ -370,7 +422,7 @@ async def upload_video(title: str = Form(...), description: str = Form(""), tags
     # 数据库写入失败时清理已写入的文件，保证一致性
     try:
         record = Video(title=title.strip(), description=description.strip(), tags=tags.strip(),
-                       filename=filename, cover_image=cover_filename, file_size=len(content),
+                       filename=filename, cover_image=cover_filename, file_size=total,
                        duration=duration,
                        user_id=user.id, status="pending")
         db.add(record)
@@ -384,7 +436,8 @@ async def upload_video(title: str = Form(...), description: str = Form(""), tags
         raise HTTPException(500, "Upload failed, please try again")
     response = {"message": "Video uploaded successfully. Awaiting admin approval.", "video": record.to_dict()}
     # 后台异步转码（不阻塞响应）
-    asyncio.create_task(_transcode_hls(record.id, settings.UPLOAD_FOLDER / filename))
+    from app.tasks import transcode_hls
+    asyncio.create_task(transcode_hls.kiq(record.id, str(settings.UPLOAD_FOLDER / filename)))
     return response
 
 
@@ -462,7 +515,7 @@ async def proxy_stream(url: str, referer: str = "", db: AsyncSession = Depends(g
 
 
 @router.get("/my-videos")
-async def get_my_videos(page: int = 1, per_page: int = 10,
+async def get_my_videos(page: int = 1, per_page: int = Query(10, le=100),
                         db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     q = (select(Video).options(selectinload(Video.author_rel))
          .where(Video.user_id == user.id).order_by(Video.created_at.desc()))
@@ -484,8 +537,14 @@ async def update_user_video(video_id: int, data: VideoUpdate,
     video = await db.get(Video, video_id)
     if not video or video.user_id != user.id:
         raise HTTPException(403, "Access denied")
-    if data.title: video.title = data.title
-    if data.description is not None: video.description = data.description
+    if data.title:
+        if len(data.title) > 255:
+            raise HTTPException(400, "title max length is 255")
+        video.title = data.title
+    if data.description is not None:
+        if len(data.description) > 5000:
+            raise HTTPException(400, "description max length is 5000")
+        video.description = data.description
     if data.tags is not None:
         video.tags = ",".join(data.tags) if isinstance(data.tags, list) else data.tags
     await db.commit()
@@ -526,7 +585,7 @@ async def record_history(video_id: int, db: AsyncSession = Depends(get_db),
 
 
 @router.get("/history")
-async def get_history(page: int = 1, per_page: int = 20,
+async def get_history(page: int = 1, per_page: int = Query(20, le=100),
                       db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from app.models import WatchHistory
     q = (select(WatchHistory)
@@ -591,7 +650,7 @@ async def toggle_favorite(video_id: int, db: AsyncSession = Depends(get_db),
 
 
 @router.get("/favorites")
-async def get_favorites(page: int = 1, per_page: int = 20,
+async def get_favorites(page: int = 1, per_page: int = Query(20, le=100),
                         db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     from app.models import Favorite
     q = (select(Favorite)
