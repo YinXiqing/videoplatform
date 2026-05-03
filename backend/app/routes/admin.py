@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, or_, func, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-import aiohttp
+import aiohttp, aiofiles
 import re
 from app.deps import get_db, get_current_user, require_admin
 from app.models import User, Video, ScrapedVideoInfo
@@ -191,6 +191,27 @@ def _ydlp_extract(url):
     return title, cover_url, video_url, duration, http_headers, bool(m3u8)
 
 
+async def _download_cover(scraped_id: int, cover_url: str, source_url: str) -> str | None:
+    """下载封面到本地，返回本地文件名，失败返回 None"""
+    if not cover_url or not cover_url.startswith("http"):
+        return None
+    try:
+        ext = cover_url.split("?")[0].rsplit(".", 1)[-1].lower()
+        if ext not in ("jpg", "jpeg", "png", "webp"):
+            ext = "jpg"
+        fname = f"cover_{scraped_id}.{ext}"
+        async with aiohttp.ClientSession() as s:
+            async with s.get(cover_url,
+                             headers={"User-Agent": "Mozilla/5.0", "Referer": source_url or cover_url},
+                             ssl=False) as r:
+                content = await r.read()
+        async with aiofiles.open(settings.UPLOAD_FOLDER / fname, "wb") as f:
+            await f.write(content)
+        return fname
+    except Exception:
+        return None
+
+
 class ScrapeIn(BaseModel):
     url: str
 
@@ -216,6 +237,7 @@ async def scrape_video(data: ScrapeIn, db: AsyncSession = Depends(get_db),
     db.add(scraped)
     await db.commit()
     await db.refresh(scraped)
+
     return {"message": "视频信息抓取成功",
             "scraped_info": {"source_url": url, "title": title, "description": "",
                              "video_url": video_url, "cover_url": cover_url, "tags": ""},
@@ -293,10 +315,10 @@ class ImportIn(BaseModel):
 
 # ── 下载任务 ──────────────────────────────────────────────────────────────────
 
-async def _run_download(scraped_id: int, source_url: str, cover_url: Optional[str]):
+async def _run_download(scraped_id: int, source_url: str):
     """后台任务：yt-dlp 下载合并视频 + ffmpeg 切 HLS，30分钟超时"""
     try:
-        await asyncio.wait_for(_do_download(scraped_id, source_url, cover_url), timeout=7200)
+        await asyncio.wait_for(_do_download(scraped_id, source_url), timeout=7200)
     except asyncio.TimeoutError:
         logger.warning("scraper_download_timeout", scraped_id=scraped_id)
         from app.database import AsyncSessionLocal
@@ -306,7 +328,7 @@ async def _run_download(scraped_id: int, source_url: str, cover_url: Optional[st
             await db.commit()
 
 
-async def _do_download(scraped_id: int, source_url: str, cover_url: Optional[str]):
+async def _do_download(scraped_id: int, source_url: str):
     from app.database import AsyncSessionLocal
     import json, shutil
 
@@ -369,27 +391,10 @@ async def _do_download(scraped_id: int, source_url: str, cover_url: Optional[str
             raise RuntimeError("ffmpeg 切片失败")
         await set_state(95)
 
-        # Step 3: 下载封面
-        cover_fname = None
-        if cover_url and cover_url.startswith("http"):
-            try:
-                import aiofiles
-                ext = cover_url.split("?")[0].rsplit(".", 1)[-1].lower()
-                if ext not in ("jpg", "jpeg", "png", "webp"): ext = "jpg"
-                cover_fname = f"cover_scraped_{scraped_id}.{ext}"
-                async with aiohttp.ClientSession() as s:
-                    async with s.get(cover_url, headers={"User-Agent": "Mozilla/5.0", "Referer": source_url}, ssl=False) as r:
-                        content = await r.read()
-                async with aiofiles.open(settings.UPLOAD_FOLDER / cover_fname, "wb") as f:
-                    await f.write(content)
-            except Exception:
-                cover_fname = None
-
         async with AsyncSessionLocal() as db:
             await db.execute(update(ScrapedVideoInfo).where(ScrapedVideoInfo.id == scraped_id).values(
                 download_status="done", download_progress=100,
                 local_filename=mp4_name,
-                **({"cover_url": cover_fname} if cover_fname else {}),
             ))
             await db.commit()
 
@@ -409,7 +414,7 @@ async def start_download(scraped_id: int, db: AsyncSession = Depends(get_db), _:
     scraped.download_status = "downloading"
     scraped.download_progress = 0
     await db.commit()
-    asyncio.create_task(_run_download(scraped_id, scraped.source_url, scraped.cover_url))
+    asyncio.create_task(_run_download(scraped_id, scraped.source_url))
     return {"message": "下载任务已启动"}
 
 
@@ -439,11 +444,19 @@ async def import_scraped_video(scraped_id: int, data: ImportIn = ImportIn(),
         except Exception:
             pass
 
+    # 导入阶段下载封面到本地，确保 Video.cover_image 永远是本地文件
+    cover_value = scraped.cover_url
+    if cover_value and cover_value.startswith("http"):
+        local_cover = await _download_cover(scraped_id, cover_value, scraped.source_url or "")
+        if local_cover:
+            cover_value = local_cover
+            scraped.cover_url = local_cover
+
     video = Video(
         title=data.title or scraped.title or "Untitled",
         description=data.description if data.description is not None else (scraped.description or ""),
         tags=scraped.tags or "", page_url=scraped.source_url,
-        cover_image=scraped.cover_url, duration=duration,
+        cover_image=cover_value, duration=duration,
         is_scraped=False, hls_ready=False,
         user_id=admin.id, status="approved",
         filename=scraped.local_filename,
@@ -521,7 +534,7 @@ async def batch_download_scraped(data: BatchIds, db: AsyncSession = Depends(get_
     started = 0
     for s in items:
         s.download_status = "downloading"; s.download_progress = 0
-        asyncio.create_task(_run_download(s.id, s.source_url, s.cover_url))
+        asyncio.create_task(_run_download(s.id, s.source_url))
         started += 1
     await db.commit()
     return {"message": f"已启动 {started} 个下载任务", "started": started}

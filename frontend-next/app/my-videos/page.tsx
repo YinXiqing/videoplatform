@@ -103,7 +103,7 @@ export default function MyVideos() {
                     {/* 封面 */}
                     <div className="relative w-28 h-18 sm:w-32 sm:h-20 bg-gray-900 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer" style={{height: '4.5rem'}} onClick={() => setPreview(v)}>
                       {v.cover_image
-                        ? <Image src={v.is_scraped && v.cover_image?.startsWith('http') ? v.cover_image : `/api/video/cover/${v.id}`} alt={v.title} fill className="object-cover" sizes="128px" />
+                        ? <Image src={`/api/video/cover/${v.id}`} alt={v.title} fill className="object-cover" sizes="128px" />
                         : <div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600" />}
                       <div className="absolute bottom-1 right-1 bg-black/70 text-white text-xs px-1 py-0.5 rounded">{dur(v.duration)}</div>
                     </div>

@@ -61,7 +61,7 @@ export default function FavoritesPage() {
                 className="bg-white dark:bg-[#1f1f1f] rounded-xl p-4 flex gap-4 hover:shadow-md transition-shadow">
                 <div className="relative w-40 h-24 bg-gray-900 rounded-lg overflow-hidden flex-shrink-0">
                   {video.cover_image
-                    ? <Image src={video.is_scraped && video.cover_image.startsWith('http') ? video.cover_image : `/api/video/cover/${video.id}`}
+                    ? <Image src={`/api/video/cover/${video.id}`}
                         alt={video.title} fill className="object-cover" sizes="160px" />
                     : <div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600" />}
                   {video.duration && <div className="absolute bottom-1 right-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">{dur(video.duration)}</div>}

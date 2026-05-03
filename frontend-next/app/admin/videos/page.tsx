@@ -169,7 +169,7 @@ function AdminVideosInner() {
                       <div className="col-span-5 flex items-center gap-3 min-w-0">
                         <div className="relative w-24 h-14 bg-gray-900 rounded-lg overflow-hidden shrink-0 cursor-pointer group" onClick={() => setPreview(v)}>
                           {v.cover_image
-                            ? <Image src={v.is_scraped && v.cover_image?.startsWith('http') ? v.cover_image : `/api/video/cover/${v.id}`} alt={v.title} fill className="object-cover" sizes="96px" />
+                            ? <Image src={`/api/video/cover/${v.id}`} alt={v.title} fill className="object-cover" sizes="96px" />
                             : <div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600" />}
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <Play className="w-5 h-5 text-white" />

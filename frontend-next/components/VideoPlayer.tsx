@@ -124,7 +124,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
   const coverSrc = `/api/video/cover/${video.id}`
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 sm:gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4 sm:gap-6 lg:gap-8">
       <div>
         <div className="bg-black rounded-xl overflow-hidden aspect-video relative">
           {playError ? (
@@ -216,7 +216,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
                   <Link key={rv.id} href={`/video/${rv.id}`} className="flex gap-3 group flex-shrink-0 w-64 lg:w-auto">
                     <div className="w-32 h-20 rounded overflow-hidden flex-shrink-0 relative bg-gray-900">
                       {rv.cover_image
-                        ? <Image src={rv.is_scraped && rv.cover_image?.startsWith('http') ? rv.cover_image : `/api/video/cover/${rv.id}`}
+                        ? <Image src={`/api/video/cover/${rv.id}`}
                             alt={rv.title} fill className="object-cover" sizes="128px" />
                         : <div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600" />}
                       <div className="absolute bottom-1 right-1 bg-black/70 text-white text-xs px-1 py-0.5 rounded">{dur(rv.duration)}</div>
