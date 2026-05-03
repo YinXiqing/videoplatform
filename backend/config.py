@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
+    SENTRY_DSN: str = ""
+
     RESEND_API_KEY: str = ""
     RESEND_FROM: str = "noreply@resend.dev"
     FRONTEND_URL: str = "http://localhost:3000"

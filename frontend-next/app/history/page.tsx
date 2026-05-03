@@ -56,7 +56,7 @@ export default function HistoryPage() {
 							观看历史
 						</h1>
 						{history.length > 0 && (
-							<button
+							<button type="button"
 								onClick={() => setConfirmClear(true)}
 								className="text-sm text-red-500 hover:text-red-700"
 							>
@@ -140,8 +140,8 @@ export default function HistoryPage() {
 							</div>
 							{totalPages > 1 && (
 								<div className="flex justify-center items-center gap-2 mt-4">
-									<button
-										onClick={() => setPage((p) => Math.max(1, p - 1))}
+									<button type="button"
+						onClick={() => setPage((p) => Math.max(1, p - 1))}
 										disabled={page === 1}
 										className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800"
 									>
@@ -150,8 +150,8 @@ export default function HistoryPage() {
 									<span className="text-sm text-gray-500 dark:text-gray-400">
 										{page} / {totalPages}
 									</span>
-									<button
-										onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+									<button type="button"
+						onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
 										disabled={page === totalPages}
 										className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800"
 									>

@@ -355,6 +355,8 @@ async def _do_download(scraped_id: int, source_url: str):
             await db.execute(update(ScrapedVideoInfo).where(ScrapedVideoInfo.id == scraped_id)
                              .values(download_progress=progress, download_status=status))
             await db.commit()
+        from app.routes.ws import notify
+        asyncio.create_task(notify(f"download_{scraped_id}", {"progress": progress, "status": status}))
 
     try:
         loop = asyncio.get_running_loop()
@@ -411,6 +413,8 @@ async def _do_download(scraped_id: int, source_url: str):
                 local_filename=mp4_name,
             ))
             await db.commit()
+        from app.routes.ws import notify
+        asyncio.create_task(notify(f"download_{scraped_id}", {"progress": 100, "status": "done"}))
 
     except Exception as e:
         logger.warning("scraper_download_failed", scraped_id=scraped_id, error=str(e))

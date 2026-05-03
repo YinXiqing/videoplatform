@@ -38,7 +38,7 @@ function ResetPasswordForm() {
 			await api.post("/auth/reset-password", { token, password });
 			setSuccess(true);
 			setTimeout(() => router.push("/login"), 2000);
-		} catch (e: any) {
+		} catch (e: unknown) {
 			setError(e.response?.data?.detail || "重置失败，请重试");
 		} finally {
 			setLoading(false);

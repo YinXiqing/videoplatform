@@ -49,6 +49,11 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+    # Sentry
+    if settings.SENTRY_DSN:
+        import sentry_sdk
+        sentry_sdk.init(dsn=settings.SENTRY_DSN, traces_sample_rate=0.5)
+
     app.add_middleware(LimitBodySizeMiddleware)
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(
@@ -74,6 +79,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     from app.routes.follow import router as follow_router
     app.include_router(follow_router)
+    from app.routes.ws import router as ws_router
+    app.include_router(ws_router)
 
     from fastapi.staticfiles import StaticFiles
     settings.UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)

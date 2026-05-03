@@ -11,7 +11,7 @@ export const metadata = {
 	title: "视频平台",
 	description: "轻量级视频分享平台",
 	manifest: "/manifest.json",
-	icons: { icon: "/icon-192.svg", apple: "/icon-192.svg" },
+	icons: { icon: "/favicon.svg?v=1", apple: "/icon-192.svg?v=1" },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -128,8 +128,8 @@ export default function FavoritesPage() {
 							</div>
 							{totalPages > 1 && (
 								<div className="flex justify-center items-center gap-2 mt-4">
-									<button
-										onClick={() => setPage((p) => Math.max(1, p - 1))}
+									<button type="button"
+								onClick={() => setPage((p) => Math.max(1, p - 1))}
 										disabled={page === 1}
 										className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800"
 									>
@@ -138,8 +138,8 @@ export default function FavoritesPage() {
 									<span className="text-sm text-gray-500 dark:text-gray-400">
 										{page} / {totalPages}
 									</span>
-									<button
-										onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+									<button type="button"
+								onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
 										disabled={page === totalPages}
 										className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800"
 									>
