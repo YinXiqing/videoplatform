@@ -136,11 +136,19 @@ export default function AdminDashboard() {
 							<CardContent>
 								<div className="flex items-end gap-2 h-32">
 									{trends.labels.map((label, i) => (
-										<div key={label} className="flex-1 flex flex-col items-center gap-1">
-											<span className="text-xs text-gray-500">{trends.video_trends[i]}</span>
+										<div
+											key={label}
+											className="flex-1 flex flex-col items-center gap-1"
+										>
+											<span className="text-xs text-gray-500">
+												{trends.video_trends[i]}
+											</span>
 											<div
 												className="w-full bg-primary-500 rounded-t transition-all"
-												style={{ height: `${(trends.video_trends[i] / maxVideo) * 100}%`, minHeight: trends.video_trends[i] > 0 ? '4px' : '0' }}
+												style={{
+													height: `${(trends.video_trends[i] / maxVideo) * 100}%`,
+													minHeight: trends.video_trends[i] > 0 ? "4px" : "0",
+												}}
 											/>
 											<span className="text-xs text-gray-400">{label}</span>
 										</div>
@@ -155,11 +163,19 @@ export default function AdminDashboard() {
 							<CardContent>
 								<div className="flex items-end gap-2 h-32">
 									{trends.labels.map((label, i) => (
-										<div key={label} className="flex-1 flex flex-col items-center gap-1">
-											<span className="text-xs text-gray-500">{trends.view_trends[i]}</span>
+										<div
+											key={label}
+											className="flex-1 flex flex-col items-center gap-1"
+										>
+											<span className="text-xs text-gray-500">
+												{trends.view_trends[i]}
+											</span>
 											<div
 												className="w-full bg-green-500 rounded-t transition-all"
-												style={{ height: `${(trends.view_trends[i] / maxView) * 100}%`, minHeight: trends.view_trends[i] > 0 ? '4px' : '0' }}
+												style={{
+													height: `${(trends.view_trends[i] / maxView) * 100}%`,
+													minHeight: trends.view_trends[i] > 0 ? "4px" : "0",
+												}}
 											/>
 											<span className="text-xs text-gray-400">{label}</span>
 										</div>

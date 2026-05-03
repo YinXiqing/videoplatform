@@ -6,7 +6,7 @@ export default function Loading() {
 				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 					{[...Array(8)].map((_, i) => (
 						<div
-							key={i}
+							key={`skel-${i}`}
 							className="bg-white dark:bg-[#1f1f1f] rounded-xl shadow-sm overflow-hidden animate-pulse"
 						>
 							<div className="aspect-video bg-gray-200 dark:bg-[#2a2a2a] dark:bg-[#333]" />

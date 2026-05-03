@@ -212,6 +212,20 @@ async def list_videos(page: int = 1, per_page: int = Query(12, le=100), search: 
             "pages": -(-total // per_page), "current_page": page, "per_page": per_page}
 
 
+@router.get("/suggest")
+async def suggest_videos(q: str = "", limit: int = Query(5, le=10),
+                          db: AsyncSession = Depends(get_db)):
+    """搜索建议：返回匹配的视频标题"""
+    if not q.strip():
+        return {"suggestions": []}
+    pat = f"%{q}%"
+    items = (await db.execute(
+        select(Video.title).where(Video.status == "approved", Video.title.ilike(pat))
+        .distinct().limit(limit)
+    )).scalars().all()
+    return {"suggestions": items}
+
+
 @router.get("/detail/{video_id}")
 async def get_video_detail(video_id: int, db: AsyncSession = Depends(get_db),
                            user: Optional[User] = Depends(get_optional_user)):

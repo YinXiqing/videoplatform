@@ -51,7 +51,7 @@ export default function FavoritesPage() {
 						<div className="space-y-4">
 							{[...Array(5)].map((_, i) => (
 								<div
-									key={i}
+									key={`skel-${i}`}
 									className="bg-white dark:bg-[#1f1f1f] rounded-xl p-4 flex gap-4 animate-pulse"
 								>
 									<div className="w-40 h-24 bg-gray-200 dark:bg-[#333] rounded-lg flex-shrink-0" />

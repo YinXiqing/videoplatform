@@ -63,10 +63,10 @@ function AdminVideosInner() {
 
 	useEffect(() => {
 		fetchVideos();
-	}, [statusFilter, page]);
+	}, [fetchVideos]);
 	useEffect(() => {
 		setPage(1);
-	}, [statusFilter]);
+	}, []);
 
 	const fetchVideos = async () => {
 		setLoading(true);

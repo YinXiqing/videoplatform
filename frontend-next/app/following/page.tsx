@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/AuthGuard";
 import api from "@/lib/api";
 
@@ -43,7 +43,10 @@ export default function FollowingPage() {
 					{loading ? (
 						<div className="space-y-3">
 							{[...Array(5)].map((_, i) => (
-								<div key={i} className="bg-white dark:bg-[#1f1f1f] rounded-xl p-4 animate-pulse flex items-center gap-3">
+								<div
+									key={`skel-${i}`}
+									className="bg-white dark:bg-[#1f1f1f] rounded-xl p-4 animate-pulse flex items-center gap-3"
+								>
 									<div className="w-10 h-10 bg-gray-200 dark:bg-[#333] rounded-full" />
 									<div className="h-4 bg-gray-200 dark:bg-[#333] rounded w-24" />
 								</div>
@@ -52,14 +55,20 @@ export default function FollowingPage() {
 					) : following.length === 0 ? (
 						<div className="text-center py-16 text-gray-400 dark:text-gray-500">
 							<p>还没有关注任何作者</p>
-							<Link href="/" className="mt-2 text-primary-600 text-sm inline-block hover:underline">
+							<Link
+								href="/"
+								className="mt-2 text-primary-600 text-sm inline-block hover:underline"
+							>
 								去发现感兴趣的视频
 							</Link>
 						</div>
 					) : (
 						<div className="space-y-2">
 							{following.map((u) => (
-								<div key={u.id} className="bg-white dark:bg-[#1f1f1f] rounded-xl p-4 flex items-center justify-between">
+								<div
+									key={u.id}
+									className="bg-white dark:bg-[#1f1f1f] rounded-xl p-4 flex items-center justify-between"
+								>
 									<div className="flex items-center gap-3">
 										<div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
 											<span className="text-sm font-semibold text-primary-700">

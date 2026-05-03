@@ -172,7 +172,10 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 	useEffect(() => {
 		const el = videoRef.current;
 		if (!el) return;
-		let sx = 0, sy = 0, mx = 0, my = 0;
+		let sx = 0,
+			sy = 0,
+			mx = 0,
+			my = 0;
 		const onTouchStart = (e: TouchEvent) => {
 			sx = e.touches[0].clientX;
 			sy = e.touches[0].clientY;
@@ -180,11 +183,13 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 		const onTouchEnd = (e: TouchEvent) => {
 			mx = e.changedTouches[0].clientX - sx;
 			my = e.changedTouches[0].clientY - sy;
-			const absX = Math.abs(mx), absY = Math.abs(my);
+			const absX = Math.abs(mx),
+				absY = Math.abs(my);
 			if (absX < 30 && absY < 30) return;
 			if (absX > absY) {
 				// 水平滑动 -> 快进/快退
-				if (mx > 0) el.currentTime = Math.min(el.duration || 0, el.currentTime + 10);
+				if (mx > 0)
+					el.currentTime = Math.min(el.duration || 0, el.currentTime + 10);
 				else el.currentTime = Math.max(0, el.currentTime - 10);
 			}
 		};
@@ -236,7 +241,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 		}
 	};
 
-const handleApprove = () =>
+	const handleApprove = () =>
 		setConfirm({
 			isOpen: true,
 			type: "info",

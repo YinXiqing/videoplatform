@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
+import api from "@/lib/api";
 
 export default function Navbar() {
 	const { user, logout, isAdmin } = useAuth();
@@ -14,6 +15,7 @@ export default function Navbar() {
 	const [q, setQ] = useState("");
 	const [showHistory, setShowHistory] = useState(false);
 	const [searchHistory, setSearchHistory] = useState<string[]>([]);
+	const [suggestions, setSuggestions] = useState<string[]>([]);
 	const [showUserMenu, setShowUserMenu] = useState(false);
 	const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +58,18 @@ export default function Navbar() {
 		setSearchHistory(updated);
 		localStorage.setItem("search_history", JSON.stringify(updated));
 	};
+
+	// 搜索建议（防抖）
+	useEffect(() => {
+		if (!q.trim()) { setSuggestions([]); return; }
+		const timer = setTimeout(async () => {
+			try {
+				const res = await api.get("/video/suggest", { params: { q } });
+				setSuggestions(res.data.suggestions);
+			} catch { setSuggestions([]); }
+		}, 200);
+		return () => clearTimeout(timer);
+	}, [q]);
 
 	const handleSearch = (e: React.FormEvent) => {
 		e.preventDefault();
@@ -143,7 +157,17 @@ export default function Navbar() {
 								</button>
 								{showHistory && searchHistory.length > 0 && (
 									<div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-[#2a2a2a] rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 py-1 z-50">
-										{searchHistory.map((term) => (
+										{q.trim()
+											? suggestions.map((s) => (
+												<div
+													key={s}
+													onMouseDown={() => { setQ(s); }}
+													className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-700 dark:text-gray-300"
+												>
+													{s}
+												</div>
+											))
+											: searchHistory.map((term) => (
 											<div
 												key={term}
 												onClick={() => handleHistoryClick(term)}
@@ -235,9 +259,9 @@ export default function Navbar() {
 												</div>
 												{[
 													{ href: "/history", label: "观看历史" },
-											{ href: "/subscriptions", label: "订阅" },
-											{ href: "/following", label: "我的关注" },
-											{ href: "/favorites", label: "我的收藏" },
+													{ href: "/subscriptions", label: "订阅" },
+													{ href: "/following", label: "我的关注" },
+													{ href: "/favorites", label: "我的收藏" },
 													{ href: "/my-videos", label: "我的视频" },
 													{ href: "/profile", label: "个人资料" },
 													...(isAdmin()

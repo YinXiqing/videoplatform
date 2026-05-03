@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import VideoCard from "@/components/VideoCard";
+import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/AuthGuard";
+import VideoCard from "@/components/VideoCard";
 import api from "@/lib/api";
 import type { Video } from "@/types";
 

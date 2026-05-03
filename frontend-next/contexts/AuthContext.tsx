@@ -15,22 +15,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const [user, setUser] = useState<User | null>(null);
 	const [loading, setLoading] = useState(true);
 
-	useEffect(() => {
-		const token = localStorage.getItem("token");
-		if (!token) {
-			setLoading(false);
-			return;
-		}
-		// 先从缓存恢复用户，消除闪烁
-		const cached = localStorage.getItem("user");
-		if (cached) {
-			try {
-				setUser(JSON.parse(cached));
-			} catch {}
-		}
-		// 后台验证并刷新
-		fetchProfile().finally(() => setLoading(false));
-	}, []);
+	const logout = () => {
+		api.post("/auth/logout").catch(() => {});
+		localStorage.removeItem("token");
+		localStorage.removeItem("user");
+		setUser(null);
+	};
 
 	const fetchProfile = async () => {
 		try {
@@ -41,6 +31,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			logout();
 		}
 	};
+
+	useEffect(() => {
+		const token = localStorage.getItem("token");
+		if (!token) {
+			setLoading(false);
+			return;
+		}
+		const cached = localStorage.getItem("user");
+		if (cached) {
+			try {
+				setUser(JSON.parse(cached));
+			} catch {}
+		}
+		fetchProfile().finally(() => setLoading(false));
+	}, []);
 
 	const login = async (username: string, password: string) => {
 		try {
@@ -71,13 +76,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				error: e.response?.data?.detail || "Registration failed",
 			};
 		}
-	};
-
-	const logout = () => {
-		api.post("/auth/logout").catch(() => {});
-		localStorage.removeItem("token");
-		localStorage.removeItem("user");
-		setUser(null);
 	};
 
 	const updateProfile = async (

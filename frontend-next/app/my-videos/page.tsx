@@ -71,10 +71,6 @@ export default function MyVideos() {
 	const [totalPages, setTotalPages] = useState(1);
 	const PER_PAGE = 10;
 
-	useEffect(() => {
-		fetchVideos(page);
-	}, [page]);
-
 	const fetchVideos = async (p = 1) => {
 		setLoading(true);
 		try {
@@ -88,6 +84,10 @@ export default function MyVideos() {
 			setLoading(false);
 		}
 	};
+	useEffect(() => {
+		fetchVideos(page);
+	}, [page]);
+
 
 	const deleteVideo = (id: number) =>
 		setConfirm({
@@ -147,7 +147,6 @@ export default function MyVideos() {
 								管理您上传的视频内容
 							</p>
 						</div>
-
 					</div>
 
 					<div className="bg-white dark:bg-[#1f1f1f] rounded-t-xl shadow-sm border-b border-gray-200 dark:border-gray-700">

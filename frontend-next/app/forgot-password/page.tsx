@@ -16,7 +16,7 @@ export default function ForgotPassword() {
 		try {
 			await api.post("/auth/forgot-password", { email });
 			setSent(true);
-		} catch (e: any) {
+		} catch (e: unknown) {
 			setError(e.response?.data?.detail || "发送失败，请重试");
 		} finally {
 			setLoading(false);
