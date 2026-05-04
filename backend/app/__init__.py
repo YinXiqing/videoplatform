@@ -49,11 +49,6 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-    # Sentry
-    if settings.SENTRY_DSN:
-        import sentry_sdk
-        sentry_sdk.init(dsn=settings.SENTRY_DSN, traces_sample_rate=0.5)
-
     app.add_middleware(LimitBodySizeMiddleware)
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(

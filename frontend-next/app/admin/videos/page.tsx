@@ -3,7 +3,7 @@ import { Check, Pencil, Play, Search, Trash2, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { RequireAdmin } from "@/components/AuthGuard";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Badge } from "@/components/ui/badge";
@@ -61,14 +61,7 @@ function AdminVideosInner() {
 	const [confirm, setConfirm] = useState<ConfirmState>({ isOpen: false });
 	const [preview, setPreview] = useState<Video | null>(null);
 
-	useEffect(() => {
-		fetchVideos();
-	}, [fetchVideos]);
-	useEffect(() => {
-		setPage(1);
-	}, []);
-
-	const fetchVideos = async () => {
+	const fetchVideos = useCallback(async () => {
 		setLoading(true);
 		try {
 			const res = await api.get("/admin/videos", {
@@ -81,7 +74,14 @@ function AdminVideosInner() {
 		} finally {
 			setLoading(false);
 		}
-	};
+	}, [page, statusFilter, search]);
+
+	useEffect(() => {
+		fetchVideos();
+	}, [fetchVideos]);
+	useEffect(() => {
+		setPage(1);
+	}, []);
 
 	const bulkUpdate = async (status: string, ids?: number[]) => {
 		const toUpdate = ids ?? selected;

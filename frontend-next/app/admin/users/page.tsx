@@ -1,6 +1,6 @@
 "use client";
 import { Pencil, Search, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { RequireAdmin } from "@/components/AuthGuard";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { Badge } from "@/components/ui/badge";
@@ -26,11 +26,7 @@ export default function AdminUsers() {
 	const [editing, setEditing] = useState<User | null>(null);
 	const [confirm, setConfirm] = useState<ConfirmState>({ isOpen: false });
 
-	useEffect(() => {
-		fetchUsers();
-	}, [fetchUsers]);
-
-	const fetchUsers = async () => {
+	const fetchUsers = useCallback(async () => {
 		setLoading(true);
 		try {
 			const res = await api.get("/admin/users", {
@@ -42,7 +38,11 @@ export default function AdminUsers() {
 		} finally {
 			setLoading(false);
 		}
-	};
+	}, [page, search]);
+
+	useEffect(() => {
+		fetchUsers();
+	}, [fetchUsers]);
 
 	const deleteUser = (id: number) =>
 		setConfirm({

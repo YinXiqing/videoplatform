@@ -113,7 +113,7 @@ export default function AdminScraper() {
 		fetchList();
 	}, [fetchList]);
 
-	const startPolling = (id: number) => {
+	const startPolling = useCallback((id: number) => {
 		if (pollingRef.current[id]) return;
 		pollingRef.current[id] = setInterval(async () => {
 			try {
@@ -134,13 +134,13 @@ export default function AdminScraper() {
 				}
 			} catch {}
 		}, 2000);
-	};
+	}, []);
 
 	useEffect(() => {
 		videos
 			.filter((v) => v.download_status === "downloading")
 			.forEach((v) => startPolling(v.id));
-	}, [videos.filter, startPolling]);
+	}, [videos, startPolling]);
 
 	// 组件卸载时清理所有轮询
 	useEffect(() => {
