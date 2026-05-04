@@ -39,7 +39,8 @@ function ResetPasswordForm() {
 			setSuccess(true);
 			setTimeout(() => router.push("/login"), 2000);
 		} catch (e: unknown) {
-			setError(e.response?.data?.detail || "重置失败，请重试");
+			const axiosErr = e as { response?: { data?: { detail?: string } } };
+			setError(axiosErr.response?.data?.detail || "重置失败，请重试");
 		} finally {
 			setLoading(false);
 		}

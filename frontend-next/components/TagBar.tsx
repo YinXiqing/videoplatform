@@ -1,6 +1,6 @@
 "use client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api from "@/lib/api";
 
 export default function TagBar() {
@@ -14,8 +14,11 @@ export default function TagBar() {
 	const [allTags, setAllTags] = useState<string[]>([]);
 	const [total, setTotal] = useState(0);
 
+	const fetchedRef = useRef<string | null>(null);
 	useEffect(() => {
 		if (pathname === "/") {
+			if (fetchedRef.current === "/") return;
+			fetchedRef.current = "/";
 			api.get("/video/list", { params: { page: 1, per_page: 50 } })
 				.then((res) => {
 					const tags = new Set<string>();

@@ -23,8 +23,6 @@ async def _run_migrations():
     def _sync():
         try:
             command.upgrade(cfg, "head")
-            command.revision(cfg, autogenerate=True, message="auto")
-            command.upgrade(cfg, "head")
             return True
         except Exception as e:
             print(f"[migrate] {e}", file=sys.stderr)

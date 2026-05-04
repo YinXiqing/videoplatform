@@ -39,11 +39,16 @@ export default function Navbar() {
 
 	useEffect(() => {
 		if (!q.trim()) { setSuggestions([]); return; }
+		const controller = new AbortController();
 		const timer = setTimeout(async () => {
-			try { const res = await api.get("/video/suggest", { params: { q } }); setSuggestions(res.data.suggestions); }
-			catch { setSuggestions([]); }
+			try {
+				const res = await api.get("/video/suggest", { params: { q }, signal: controller.signal });
+				setSuggestions(res.data.suggestions);
+			} catch (err: any) {
+				if (err?.name !== "CanceledError" && err?.code !== "ERR_CANCELED") setSuggestions([]);
+			}
 		}, 200);
-		return () => clearTimeout(timer);
+		return () => { clearTimeout(timer); controller.abort(); };
 	}, [q]);
 
 	const handleSearch = (e: React.FormEvent) => {
@@ -146,7 +151,7 @@ export default function Navbar() {
 										className="w-8 h-8 rounded-full overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center hover:ring-2 hover:ring-primary-300 transition-all"
 										title="个人设置">
 										{user.avatar ? (
-											<img src={`/uploads/${user.avatar}`} alt="" className="w-full h-full object-cover" />
+											<img src={`/uploads/${user.avatar}`} alt="" className="w-full h-full object-cover" loading="lazy" />
 										) : (
 											<span className="text-sm font-semibold text-primary-700">{user.username.charAt(0).toUpperCase()}</span>
 										)}

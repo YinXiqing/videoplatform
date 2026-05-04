@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
 	devIndicators: false,
 	allowedDevOrigins: ["192.168.1.16"],
 	experimental: {
-		proxyClientMaxBodySize: 600 * 1024 * 1024, // 600MB，覆盖默认 10MB 限制
+		proxyClientMaxBodySize: 200 * 1024 * 1024, // 200MB
 	},
 	async rewrites() {
 		return [

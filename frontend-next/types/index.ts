@@ -4,6 +4,7 @@ export interface User {
 	email: string;
 	role: "user" | "admin";
 	is_active: boolean;
+	avatar?: string | null;
 	created_at: string;
 }
 

@@ -206,11 +206,11 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 			.get(`/video/favorited/${video.id}`)
 			.then((r) => setFavorited(r.data.favorited))
 			.catch(() => {});
+		api
+			.get("/video/rate/" + video.id + "/status")
+			.then((r) => { setLiked(r.data.liked); setDisliked(r.data.disliked); })
+			.catch(() => {});
 	}, [video.id, user]);
-			api
-				.get("/video/rate/" + video.id + "/status")
-				.then((r) => { setLiked(r.data.liked); setDisliked(r.data.disliked); })
-				.catch(() => {});
 
 	useEffect(() => {
 		if (!user) return;

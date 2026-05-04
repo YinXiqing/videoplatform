@@ -46,7 +46,7 @@ function VideoCard({
 
 	// 进入视口后预加载 HLS，解码一帧后暂停
 	useEffect(() => {
-		if (!inViewport || hlsError || !video.hls_ready) return;
+		if (!isHovered || !inViewport || hlsError || !video.hls_ready) return;
 		const el = videoRef.current;
 		if (!el) return;
 

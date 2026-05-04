@@ -14,9 +14,9 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
 	const sidebarRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
-		if (!open || !user) return;
+		if (!user) return;
 		api.get("/follow/list").then((r) => setSubscriptions(r.data.users)).catch(() => {});
-	}, [open, user]);
+	}, [user]);
 
 	useEffect(() => {
 		if (!open) return;
@@ -92,7 +92,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
 											className="flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
 											<div className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0 overflow-hidden">
 												{s.avatar ? (
-													<img src={`/uploads/${s.avatar}`} alt="" className="w-full h-full object-cover" />
+													<img src={`/uploads/${s.avatar}`} alt="" className="w-full h-full object-cover" loading="lazy" />
 												) : (
 													<span className="text-xs font-semibold text-primary-700 dark:text-primary-400">{s.username.charAt(0).toUpperCase()}</span>
 												)}

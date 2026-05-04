@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import VideoCard from "@/components/VideoCard";
 import api from "@/lib/api";
 import type { Video } from "@/types";
@@ -31,7 +31,8 @@ export default function VideoList({
 	const [videos, setVideos] = useState<Video[]>(initialVideos);
 	const [allTags, setAllTags] = useState<string[]>(initialTags);
 	const searchParams = useSearchParams();
-	const activeTag = searchParams.get("tag") || "";
+	const router = useRouter();
+		const activeTag = searchParams.get("tag") || "";
 	const sortBy = searchParams.get("sort") || "newest";
 	const [page, setPage] = useState(1);
 	const [hasMore, setHasMore] = useState(initialHasMore);
@@ -133,7 +134,7 @@ export default function VideoList({
 					<p>{activeTag ? `没有标签为"${activeTag}"的视频` : "暂无视频"}</p>
 					{activeTag && (
 						<button
-							onClick={() => setActiveTag("")}
+							onClick={() => router.push("/")}
 							className="mt-2 text-primary-600 text-sm hover:underline"
 						>
 							清除过滤
