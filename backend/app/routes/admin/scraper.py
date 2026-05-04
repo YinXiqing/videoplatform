@@ -1,5 +1,6 @@
-import uuid, asyncio
-from app.logger import logger
+"""管理后台：抓取、下载、导入、代理"""
+
+import uuid, asyncio, json, shutil, re as _re
 from typing import Optional
 from imageio_ffmpeg import get_ffmpeg_exe
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,168 +8,24 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select, or_, func, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 import aiohttp, aiofiles
-import re
-from app.deps import get_db, get_current_user, require_admin
+from app.deps import get_db, require_admin
 from app.models import User, Video, ScrapedVideoInfo
+from app.logger import logger
 from config import settings
+from app.routes.video.helpers import _get_duration
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
-
-
-# ── Users ─────────────────────────────────────────────────────────────────────
-
-@router.get("/users")
-async def get_users(page: int = 1, per_page: int = Query(20, le=100), search: str = "",
-                    db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    q = select(User)
-    if search:
-        pat = f"%{search}%"
-        q = q.where(or_(User.username.ilike(pat), User.email.ilike(pat)))
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
-    items = (await db.execute(q.order_by(User.created_at.desc()).offset((page - 1) * per_page).limit(per_page))).scalars().all()
-    return {"users": [u.to_dict() for u in items], "total": total,
-            "pages": -(-total // per_page), "current_page": page, "per_page": per_page}
+router = APIRouter(tags=["admin"])
 
 
-class UserUpdate(BaseModel):
-    role: Optional[str] = None
-    is_active: Optional[bool] = None
+# ── 抓取 ──
 
-
-@router.put("/users/{user_id}")
-async def update_user(user_id: int, data: UserUpdate,
-                      db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    user = await db.get(User, user_id)
-    if not user:
-        raise HTTPException(404)
-    if data.role and data.role in ("user", "admin"):
-        if user_id == admin.id:
-            raise HTTPException(400, "Cannot change your own role")
-        user.role = data.role
-    if data.is_active is not None:
-        if user_id == admin.id and not data.is_active:
-            raise HTTPException(400, "Cannot disable your own account")
-        user.is_active = data.is_active
-    await db.commit()
-    await db.refresh(user)
-    return {"message": "User updated successfully", "user": user.to_dict()}
-
-
-@router.delete("/users/{user_id}")
-async def delete_user(user_id: int, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
-    if user_id == admin.id:
-        raise HTTPException(400, "Cannot delete your own account")
-    user = await db.get(User, user_id)
-    if not user:
-        raise HTTPException(404)
-    from app.routes.video import _delete_video_files
-    from app.models import ScrapedVideoInfo, WatchHistory, Favorite
-    from sqlalchemy import delete as sa_delete
-
-    videos = (await db.execute(select(Video).where(Video.user_id == user_id))).scalars().all()
-    video_ids = [v.id for v in videos]
-
-    # 批量删除关联记录（3 条 SQL 代替 N×3 条）
-    if video_ids:
-        await db.execute(sa_delete(ScrapedVideoInfo).where(ScrapedVideoInfo.video_id.in_(video_ids)))
-        await db.execute(sa_delete(WatchHistory).where(WatchHistory.video_id.in_(video_ids)))
-        await db.execute(sa_delete(Favorite).where(Favorite.video_id.in_(video_ids)))
-        # 删除本地文件（文件系统无法批量，但每个只需要一次）
-        for v in videos:
-            await _delete_video_files(v)
-        # 批量删除视频
-        await db.execute(sa_delete(Video).where(Video.id.in_(video_ids)))
-    await db.delete(user)
-    await db.commit()
-    return {"message": "User deleted successfully"}
-
-
-# ── Videos ────────────────────────────────────────────────────────────────────
-
-@router.get("/videos")
-async def get_all_videos(page: int = 1, per_page: int = Query(20, le=100), status: str = "all", search: str = "",
-                         db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    q = select(Video).options(selectinload(Video.author_rel))
-    if status != "all" and status in ("pending", "approved", "rejected"):
-        q = q.where(Video.status == status)
-    if search:
-        pat = f"%{search}%"
-        q = q.join(User).where(or_(Video.title.ilike(pat), Video.description.ilike(pat), User.username.ilike(pat)))
-    total = (await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar_one()
-    items = (await db.execute(q.order_by(Video.created_at.desc()).offset((page - 1) * per_page).limit(per_page))).scalars().all()
-    return {"videos": [v.to_dict() for v in items], "total": total,
-            "pages": -(-total // per_page), "current_page": page, "per_page": per_page}
-
-
-class VideoAdminUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    tags: Optional[str | list] = None
-    status: Optional[str] = None
-
-
-@router.put("/videos/{video_id}")
-async def update_video(video_id: int, data: VideoAdminUpdate,
-                       db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    video = await db.get(Video, video_id)
-    if not video:
-        raise HTTPException(404)
-    if data.title: video.title = data.title.strip()
-    if data.description is not None: video.description = data.description.strip()
-    if data.tags is not None:
-        video.tags = ",".join(data.tags) if isinstance(data.tags, list) else data.tags.strip()
-    if data.status and data.status in ("pending", "approved", "rejected"):
-        video.status = data.status
-    await db.commit()
-    await db.refresh(video)
-    return {"message": "Video updated successfully", "video": video.to_dict()}
-
-
-@router.delete("/videos/{video_id}")
-async def delete_video(video_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    from app.routes.video import _delete_video
-    video = await db.get(Video, video_id)
-    if not video:
-        raise HTTPException(404)
-    await _delete_video(db, video)
-    await db.commit()
-    return {"message": "Video deleted successfully"}
-
-
-class BulkIds(BaseModel):
-    video_ids: list[int]
-    status: Optional[str] = None
-
-
-@router.post("/videos/bulk-update")
-async def bulk_update_videos(data: BulkIds, db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    if not data.status or data.status not in ("pending", "approved", "rejected"):
-        raise HTTPException(400, "Invalid status")
-    result = await db.execute(update(Video).where(Video.id.in_(data.video_ids)).values(status=data.status))
-    await db.commit()
-    return {"message": f"{result.rowcount} videos updated", "updated_count": result.rowcount}
-
-
-@router.post("/videos/bulk-delete")
-async def bulk_delete_videos(data: BulkIds, db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    from app.routes.video import _delete_video
-    videos = (await db.execute(select(Video).where(Video.id.in_(data.video_ids)))).scalars().all()
-    for v in videos:
-        await _delete_video(db, v)
-    await db.commit()
-    return {"message": f"{len(videos)} videos deleted", "deleted_count": len(videos)}
-
-
-# ── Scraping ──────────────────────────────────────────────────────────────────
 
 def _ydlp_extract(url):
-    import yt_dlp, re as _re
+    import yt_dlp
     ydl_opts = {
         "quiet": True, "no_warnings": True, "skip_download": True,
         "noplaylist": True, "socket_timeout": 20,
-        # 优先选最高画质 mp4/m3u8，回退到任意最佳
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
         "extractor_args": {"youtube": {"skip": ["dash"]}},
     }
@@ -182,7 +39,6 @@ def _ydlp_extract(url):
     cover_url = info.get("thumbnail", "")
     duration = int(info.get("duration") or 0)
     fmts = info.get("formats", [])
-    # 优先 m3u8（流媒体），其次最高画质直链
     m3u8 = [f for f in fmts if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("url") and f.get("vcodec") != "none"]
     direct = [f for f in fmts if f.get("url") and f.get("vcodec") not in (None, "none")]
     video_url = (
@@ -190,14 +46,12 @@ def _ydlp_extract(url):
         else max(direct, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))["url"] if direct
         else info.get("url", "")
     )
-    # 取对应 format 的 http_headers
     best_fmt = (
         max(m3u8, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if m3u8
         else max(direct, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if direct
         else {}
     )
     http_headers = best_fmt.get("http_headers", {}) if best_fmt else {}
-    # 确保 Referer 是原始页面 URL
     if url not in http_headers.get("Referer", ""):
         http_headers["Referer"] = url
     if video_url.endswith(".m3u") and not video_url.endswith(".m3u8"):
@@ -206,7 +60,6 @@ def _ydlp_extract(url):
 
 
 async def _download_cover(scraped_id: int, cover_url: str, source_url: str) -> str | None:
-    """下载封面到本地，返回本地文件名，失败返回 None"""
     if not cover_url or not cover_url.startswith("http"):
         return None
     try:
@@ -243,7 +96,6 @@ async def scrape_video(data: ScrapeIn, db: AsyncSession = Depends(get_db),
     except Exception as e:
         raise HTTPException(500, f"抓取失败: {e}")
 
-    import json
     scraped = ScrapedVideoInfo(source_url=url, title=title, description="",
                                video_url=video_url, cover_url=cover_url, duration=duration,
                                tags="", http_headers=json.dumps(http_headers) if http_headers else None,
@@ -267,8 +119,7 @@ async def scrape_videos_batch(data: BatchScrapeIn, db: AsyncSession = Depends(ge
                               admin: User = Depends(require_admin)):
     urls = [u.strip() for u in data.urls if u.strip()][:20]
     if not urls:
-        raise HTTPException(400, "No valid URLs provided")
-    # 过滤已抓取的 URL
+        raise HTTPException(400, "没有提供有效的 URL")
     existing_urls = set((await db.execute(
         select(ScrapedVideoInfo.source_url).where(ScrapedVideoInfo.source_url.in_(urls))
     )).scalars().all())
@@ -276,7 +127,6 @@ async def scrape_videos_batch(data: BatchScrapeIn, db: AsyncSession = Depends(ge
     if not urls:
         raise HTTPException(409, "所有 URL 均已抓取过")
     loop = asyncio.get_running_loop()
-    import json
     sem = asyncio.Semaphore(3)
 
     async def scrape_one(url: str):
@@ -294,7 +144,8 @@ async def scrape_videos_batch(data: BatchScrapeIn, db: AsyncSession = Depends(ge
     success = 0
     for item in results:
         if item:
-            db.add(item); success += 1
+            db.add(item)
+            success += 1
     await db.commit()
     failed = len(urls) - success
     return {"message": f"批量抓取完成：成功 {success} 个，失败 {failed} 个",
@@ -309,17 +160,16 @@ async def get_scraped_videos(page: int = 1, per_page: int = Query(20, le=100), s
         q = q.where(ScrapedVideoInfo.status == status)
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     items = (await db.execute(q.order_by(ScrapedVideoInfo.scraped_at.desc()).offset((page - 1) * per_page).limit(per_page))).scalars().all()
-    return {"scraped_videos": [{"id": v.id, "source_url": v.source_url, "title": v.title,
-                                "description": v.description, "cover_url": v.cover_url,
-                                "video_url": v.video_url, "tags": v.tags,
-                                "scraped_at": v.scraped_at.isoformat() if v.scraped_at else None,
-                                "status": v.status,
-                                "download_status": v.download_status,
-                                "download_progress": v.download_progress,
-                                "local_filename": v.local_filename,
-                                "is_m3u8": v.is_m3u8,
-                                "video_id": v.video_id} for v in items],
-            "total": total, "pages": -(-total // per_page), "current_page": page, "per_page": per_page}
+    return {"scraped_videos": [{
+        "id": v.id, "source_url": v.source_url, "title": v.title,
+        "description": v.description, "cover_url": v.cover_url,
+        "video_url": v.video_url, "tags": v.tags,
+        "scraped_at": v.scraped_at.isoformat() if v.scraped_at else None,
+        "status": v.status, "download_status": v.download_status,
+        "download_progress": v.download_progress, "local_filename": v.local_filename,
+        "is_m3u8": v.is_m3u8, "video_id": v.video_id,
+    } for v in items],
+        "total": total, "pages": -(-total // per_page), "current_page": page, "per_page": per_page}
 
 
 class ImportIn(BaseModel):
@@ -327,10 +177,15 @@ class ImportIn(BaseModel):
     description: Optional[str] = None
 
 
-# ── 下载任务 ──────────────────────────────────────────────────────────────────
+class ScrapedUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
+# ── 下载任务 ──
+
 
 async def _run_download(scraped_id: int, source_url: str):
-    """后台任务：yt-dlp 下载合并视频 + ffmpeg 切 HLS，30分钟超时"""
     try:
         await asyncio.wait_for(_do_download(scraped_id, source_url), timeout=7200)
     except asyncio.TimeoutError:
@@ -344,11 +199,10 @@ async def _run_download(scraped_id: int, source_url: str):
 
 async def _do_download(scraped_id: int, source_url: str):
     from app.database import AsyncSessionLocal
-    import json, shutil
 
     mp4_name = f"scraped_{scraped_id}.mp4"
     mp4_path = settings.UPLOAD_FOLDER / mp4_name
-    hls_dir = settings.UPLOAD_FOLDER / "hls" / str(scraped_id)  # 临时目录，发布时迁移
+    hls_dir = settings.UPLOAD_FOLDER / "hls" / str(scraped_id)
 
     async def set_state(progress: int, status: str = "downloading"):
         async with AsyncSessionLocal() as db:
@@ -360,8 +214,6 @@ async def _do_download(scraped_id: int, source_url: str):
 
     try:
         loop = asyncio.get_running_loop()
-
-        # Step 1: yt-dlp 下载并合并
         progress_state = {"val": 0}
 
         def progress_hook(d):
@@ -382,8 +234,10 @@ async def _do_download(scraped_id: int, source_url: str):
             "socket_timeout": 30,
             "progress_hooks": [progress_hook],
         }
-        if settings.YT_PROXY: ydl_opts["proxy"] = settings.YT_PROXY
-        if settings.YT_COOKIES_FILE: ydl_opts["cookiefile"] = settings.YT_COOKIES_FILE
+        if settings.YT_PROXY:
+            ydl_opts["proxy"] = settings.YT_PROXY
+        if settings.YT_COOKIES_FILE:
+            ydl_opts["cookiefile"] = settings.YT_COOKIES_FILE
 
         def _download():
             import yt_dlp
@@ -393,7 +247,6 @@ async def _do_download(scraped_id: int, source_url: str):
         await loop.run_in_executor(None, _download)
         await set_state(80)
 
-        # Step 2: ffmpeg 切 HLS
         hls_dir.mkdir(parents=True, exist_ok=True)
         proc = await asyncio.create_subprocess_exec(
             get_ffmpeg_exe(), "-y", "-i", str(mp4_path),
@@ -409,8 +262,7 @@ async def _do_download(scraped_id: int, source_url: str):
 
         async with AsyncSessionLocal() as db:
             await db.execute(update(ScrapedVideoInfo).where(ScrapedVideoInfo.id == scraped_id).values(
-                download_status="done", download_progress=100,
-                local_filename=mp4_name,
+                download_status="done", download_progress=100, local_filename=mp4_name,
             ))
             await db.commit()
         from app.routes.ws import notify
@@ -419,16 +271,20 @@ async def _do_download(scraped_id: int, source_url: str):
     except Exception as e:
         logger.warning("scraper_download_failed", scraped_id=scraped_id, error=str(e))
         shutil.rmtree(hls_dir, ignore_errors=True)
-        if mp4_path.exists(): mp4_path.unlink(missing_ok=True)
+        if mp4_path.exists():
+            mp4_path.unlink(missing_ok=True)
         await set_state(0, "failed")
 
 
 @router.post("/scraped/{scraped_id}/download")
 async def start_download(scraped_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
     scraped = await db.get(ScrapedVideoInfo, scraped_id)
-    if not scraped: raise HTTPException(404)
-    if scraped.download_status == "downloading": raise HTTPException(400, "已在下载中")
-    if not scraped.source_url: raise HTTPException(400, "无视频地址")
+    if not scraped:
+        raise HTTPException(404)
+    if scraped.download_status == "downloading":
+        raise HTTPException(400, "已在下载中")
+    if not scraped.source_url:
+        raise HTTPException(400, "无视频地址")
     scraped.download_status = "downloading"
     scraped.download_progress = 0
     await db.commit()
@@ -440,7 +296,8 @@ async def start_download(scraped_id: int, db: AsyncSession = Depends(get_db), _:
 @router.get("/scraped/{scraped_id}/progress")
 async def get_progress(scraped_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
     scraped = await db.get(ScrapedVideoInfo, scraped_id)
-    if not scraped: raise HTTPException(404)
+    if not scraped:
+        raise HTTPException(404)
     return {"download_status": scraped.download_status, "download_progress": scraped.download_progress,
             "local_filename": scraped.local_filename}
 
@@ -449,16 +306,16 @@ async def get_progress(scraped_id: int, db: AsyncSession = Depends(get_db), _: U
 async def import_scraped_video(scraped_id: int, data: ImportIn = ImportIn(),
                                db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
     scraped = await db.get(ScrapedVideoInfo, scraped_id)
-    if not scraped: raise HTTPException(404)
-    if scraped.download_status != "done": raise HTTPException(400, "请先下载视频")
+    if not scraped:
+        raise HTTPException(404)
+    if scraped.download_status != "done":
+        raise HTTPException(400, "请先下载视频")
 
     mp4_path = settings.UPLOAD_FOLDER / scraped.local_filename
     duration = 0
     if mp4_path.exists():
-        from app.routes.video import _get_duration
         duration = await _get_duration(mp4_path)
 
-    # 导入阶段下载封面到本地，确保 Video.cover_image 永远是本地文件
     cover_value = scraped.cover_url
     if cover_value and cover_value.startswith("http"):
         local_cover = await _download_cover(scraped_id, cover_value, scraped.source_url or "")
@@ -484,8 +341,6 @@ async def import_scraped_video(scraped_id: int, data: ImportIn = ImportIn(),
     scraped.video_id = video.id
     await db.commit()
 
-    # 迁移 HLS 目录到 hls/{video.id}/
-    import shutil
     src_hls = settings.UPLOAD_FOLDER / "hls" / str(scraped_id)
     dst_hls = settings.UPLOAD_FOLDER / "hls" / str(video.id)
     if src_hls.exists() and not dst_hls.exists():
@@ -497,20 +352,16 @@ async def import_scraped_video(scraped_id: int, data: ImportIn = ImportIn(),
     return {"message": "Video published successfully", "video": video.to_dict()}
 
 
-
-
-class ScrapedUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-
 @router.put("/scraped/{scraped_id}")
 async def update_scraped(scraped_id: int, data: ScrapedUpdate,
                          db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
     scraped = await db.get(ScrapedVideoInfo, scraped_id)
     if not scraped:
         raise HTTPException(404)
-    if data.title is not None: scraped.title = data.title.strip()
-    if data.description is not None: scraped.description = data.description
+    if data.title is not None:
+        scraped.title = data.title.strip()
+    if data.description is not None:
+        scraped.description = data.description
     await db.commit()
     return {"message": "Updated", "title": scraped.title, "description": scraped.description}
 
@@ -520,17 +371,18 @@ async def delete_scraped(scraped_id: int, db: AsyncSession = Depends(get_db), _:
     scraped = await db.get(ScrapedVideoInfo, scraped_id)
     if not scraped:
         raise HTTPException(404)
-    # 清理本地文件
-    import shutil
     if scraped.local_filename:
         p = settings.UPLOAD_FOLDER / scraped.local_filename
-        if p.exists(): p.unlink(missing_ok=True)
+        if p.exists():
+            p.unlink(missing_ok=True)
     hls_dir = settings.UPLOAD_FOLDER / "hls" / str(scraped_id)
-    if hls_dir.exists(): shutil.rmtree(hls_dir, ignore_errors=True)
+    if hls_dir.exists():
+        shutil.rmtree(hls_dir, ignore_errors=True)
     cover = scraped.cover_url
     if cover and not cover.startswith("http"):
         p = settings.UPLOAD_FOLDER / cover
-        if p.exists(): p.unlink(missing_ok=True)
+        if p.exists():
+            p.unlink(missing_ok=True)
     await db.delete(scraped)
     await db.commit()
     return {"message": "Deleted"}
@@ -547,7 +399,8 @@ async def batch_download_scraped(data: BatchIds, db: AsyncSession = Depends(get_
         ScrapedVideoInfo.download_status.in_(["none", "failed"])))).scalars().all()
     started = 0
     for s in items:
-        s.download_status = "downloading"; s.download_progress = 0
+        s.download_status = "downloading"
+        s.download_progress = 0
         from app.tasks import download_scraped_video
         asyncio.create_task(download_scraped_video(s.id, s.source_url))
         started += 1
@@ -562,58 +415,11 @@ async def batch_delete_scraped(data: BatchIds, db: AsyncSession = Depends(get_db
     return {"message": f"成功删除 {result.rowcount} 条记录", "success_count": result.rowcount}
 
 
-# ── Stats ─────────────────────────────────────────────────────────────────────
+# ── M3U8 代理 ──
 
-@router.get("/stats")
-async def get_stats(db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    total_users = (await db.execute(select(func.count(User.id)))).scalar_one()
-    total_videos = (await db.execute(select(func.count(Video.id)))).scalar_one()
-    pending = (await db.execute(select(func.count(Video.id)).where(Video.status == "pending"))).scalar_one()
-    approved = (await db.execute(select(func.count(Video.id)).where(Video.status == "approved"))).scalar_one()
-    total_views = (await db.execute(select(func.sum(Video.view_count)))).scalar_one() or 0
-    return {"total_users": total_users, "total_videos": total_videos,
-            "pending_videos": pending, "approved_videos": approved, "total_views": int(total_views)}
-
-
-@router.get("/trends")
-async def get_trends(db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    """最近 7 天每日新增视频和播放量趋势"""
-    from datetime import datetime, timedelta, timezone
-    from sqlalchemy import cast, Date
-
-    today = datetime.now(timezone.utc).replace(tzinfo=None).date()
-    video_trends = []
-    view_trends = []
-    labels = []
-
-    for i in range(6, -1, -1):
-        day = today - timedelta(days=i)
-        labels.append(day.strftime("%m-%d"))
-        # 当天新增视频数
-        day_start = datetime(day.year, day.month, day.day)
-        day_end = day_start + timedelta(days=1)
-        video_count = (await db.execute(
-            select(func.count(Video.id)).where(
-                Video.created_at >= day_start, Video.created_at < day_end
-            )
-        )).scalar_one()
-        video_trends.append(video_count)
-        # 当天新增播放量（这里简化统计，取当天创建视频的播放量总和）
-        view_count = (await db.execute(
-            select(func.coalesce(func.sum(Video.view_count), 0)).where(
-                Video.created_at >= day_start, Video.created_at < day_end
-            )
-        )).scalar_one()
-        view_trends.append(int(view_count))
-
-    return {"labels": labels, "video_trends": video_trends, "view_trends": view_trends}
-
-
-# ── M3U8 代理（解决浏览器 CORS 限制）────────────────────────────────────────
 
 @router.get("/proxy")
 async def proxy_m3u8(url: str, _: User = Depends(require_admin)):
-    """代理转发 m3u8 及 ts 分片，解决浏览器 CORS 问题"""
     import urllib.parse
     proxy = settings.YT_PROXY
     try:
@@ -623,7 +429,6 @@ async def proxy_m3u8(url: str, _: User = Depends(require_admin)):
                 content_type = r.headers.get("Content-Type", "application/octet-stream")
                 body = await r.read()
 
-        # 如果是 m3u8 文本，重写其中的 ts/分片 URL 为代理 URL
         if "mpegurl" in content_type or url.endswith(".m3u8"):
             text = body.decode("utf-8", errors="replace")
             base = url.rsplit("/", 1)[0] + "/"

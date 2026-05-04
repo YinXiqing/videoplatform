@@ -12,8 +12,46 @@ from config import settings
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
+async def _run_migrations():
+    """自动数据库迁移：检测模型变更并同步到数据库（启动时自动执行）"""
+    import asyncio, os, sys
+    from alembic.config import Config
+    from alembic import command
+
+    cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+
+    def _sync():
+        try:
+            command.upgrade(cfg, "head")
+            command.revision(cfg, autogenerate=True, message="auto")
+            command.upgrade(cfg, "head")
+            return True
+        except Exception as e:
+            print(f"[migrate] {e}", file=sys.stderr)
+            return False
+
+    ok = await asyncio.to_thread(_sync)
+    if ok:
+        return
+
+    # 兜底：create_all 建表（首次部署或 alembic 失败时）
+    try:
+        from app.database import engine, Base
+        from app.models import User, Video, PasswordResetToken, WatchHistory, ScrapedVideoInfo, Favorite  # noqa: F401
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        # 标记迁移头，后续增量走 alembic
+        await asyncio.to_thread(lambda: command.stamp(cfg, "head"))
+        print("[migrate] Database tables created")
+    except Exception as e:
+        print(f"[migrate] create_all failed: {e}", file=sys.stderr)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 自动数据库迁移
+    await _run_migrations()
+
     # 重置上次异常中断的下载任务
     from app.database import AsyncSessionLocal
     from app.models import ScrapedVideoInfo

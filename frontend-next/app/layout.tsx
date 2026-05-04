@@ -1,5 +1,4 @@
 import "./globals.css";
-import Script from "next/script";
 import type { ReactNode } from "react";
 import Navbar from "@/components/Navbar";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -11,7 +10,7 @@ export const metadata = {
 	title: "视频平台",
 	description: "轻量级视频分享平台",
 	manifest: "/manifest.json",
-	icons: { icon: "/favicon.svg?v=1", apple: "/icon-192.svg?v=1" },
+	icons: { icon: "/favicon.svg?v=3", apple: "/icon-192.svg?v=3" },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -32,10 +31,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           })();
         `,
 					}}
-				/>
-				<Script
-					src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"
-					strategy="afterInteractive"
 				/>
 				<QueryProvider>
 					<AuthProvider>

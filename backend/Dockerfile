@@ -13,4 +13,4 @@ COPY . .
 
 EXPOSE 5000
 
-CMD ["uv", "run", "python", "-c", "import asyncio; from app.database import engine, Base; from app.models import User, Video, PasswordResetToken, WatchHistory, ScrapedVideoInfo, Favorite; asyncio.run(engine.run_sync(Base.metadata.create_all)); asyncio.run(engine.dispose()); import uvicorn; uvicorn.run('run:app', host='0.0.0.0', port=5000)"]
+CMD ["uv", "run", "uvicorn", "run:app", "--host", "0.0.0.0", "--port", "5000"]

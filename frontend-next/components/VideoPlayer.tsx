@@ -5,14 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Toast from "@/components/Toast";
 import { useAuth } from "@/contexts/AuthContext";
-import api, { BACKEND_URL } from "@/lib/api";
+import api from "@/lib/api";
 import type { Video } from "@/types";
-
-declare global {
-	interface Window {
-		Hls: any;
-	}
-}
 
 const dur = (s: number | null) =>
 	s
@@ -83,7 +77,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 
 		api
 			.get(`/video/stream/${video.id}`)
-			.then(({ data }) => {
+			.then(async ({ data }) => {
 				if (hlsRef.current) {
 					hlsRef.current.destroy();
 					hlsRef.current = null;
@@ -91,17 +85,18 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 
 				if (data.is_hls) {
 					const url = data.video_url;
+					const { default: Hls } = await import("hls.js");
 
-					if (window.Hls?.isSupported()) {
-						const hls = new window.Hls({ enableWorker: true });
+					if (Hls.isSupported()) {
+						const hls = new Hls({ enableWorker: true });
 						hlsRef.current = hls;
 						hls.loadSource(url);
 						hls.attachMedia(el);
-						hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+						hls.on(Hls.Events.MANIFEST_PARSED, () => {
 							restoreProgress();
 							el.play().catch(() => {});
 						});
-						hls.on(window.Hls.Events.ERROR, (_: any, d: any) => {
+						hls.on(Hls.Events.ERROR, (_: any, d: any) => {
 							if (d.fatal) setPlayError("error");
 						});
 					} else if (el.canPlayType("application/vnd.apple.mpegurl")) {
@@ -364,7 +359,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 
 							{user ? (
 								<a
-									href={`${BACKEND_URL}/api/video/download/${video.id}`}
+									href={`/api/video/download/${video.id}`}
 									className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#333] text-gray-700 dark:text-gray-300 text-sm rounded-lg transition-colors"
 								>
 									<svg

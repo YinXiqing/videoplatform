@@ -36,15 +36,15 @@ async def register(request: Request, data: RegisterIn, db: AsyncSession = Depend
     username = data.username.strip()
     email = data.email.strip().lower()
     if len(username) < 3 or len(username) > 80:
-        raise HTTPException(400, "Username must be 3-80 characters")
+        raise HTTPException(400, "用户名长度必须在 3-80 个字符之间")
     if not EMAIL_RE.match(email):
-        raise HTTPException(400, "Invalid email format")
+        raise HTTPException(400, "邮箱格式不正确")
     if len(data.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+        raise HTTPException(400, "密码长度至少为 6 个字符")
 
     existing = await db.execute(select(User).where(or_(User.username == username, User.email == email)))
     if existing.scalar_one_or_none():
-        raise HTTPException(409, "Username or email already exists")
+        raise HTTPException(409, "用户名或邮箱已存在")
 
     user = User(username=username, email=email)
     loop = asyncio.get_running_loop()
@@ -65,14 +65,14 @@ async def login(request: Request, response: Response, data: LoginIn, db: AsyncSe
     if not await loop.run_in_executor(None, user.check_password, data.password):
         raise HTTPException(401, "密码错误")
     if not user.is_active:
-        raise HTTPException(403, "Account is disabled")
+        raise HTTPException(403, "账户已被禁用")
     
     token = create_token(user.id)
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
-        secure=False,  # 生产环境改为 True (需要 HTTPS)
+        secure=settings.COOKIE_SECURE,
         samesite="lax",
         max_age=settings.JWT_EXPIRE_HOURS * 3600
     )
@@ -92,14 +92,14 @@ async def update_profile(data: ProfileUpdate, user: User = Depends(get_current_u
     if data.email:
         email = data.email.strip().lower()
         if not EMAIL_RE.match(email):
-            raise HTTPException(400, "Invalid email format")
+            raise HTTPException(400, "邮箱格式不正确")
         existing = await db.execute(select(User).where(User.email == email, User.id != user.id))
         if existing.scalar_one_or_none():
-            raise HTTPException(409, "Email already exists")
+            raise HTTPException(409, "邮箱已存在")
         user.email = email
     if data.password:
         if len(data.password) < 6:
-            raise HTTPException(400, "Password must be at least 6 characters")
+            raise HTTPException(400, "密码长度至少为 6 个字符")
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, user.set_password, data.password)
     await db.commit()
@@ -165,7 +165,7 @@ async def reset_password(data: ResetPasswordIn, db: AsyncSession = Depends(get_d
     from app.models import PasswordResetToken
 
     if len(data.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+        raise HTTPException(400, "密码长度至少为 6 个字符")
 
     record = (await db.execute(
         select(PasswordResetToken).where(PasswordResetToken.token == data.token, PasswordResetToken.used == False)

@@ -7,15 +7,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from taskiq import InMemoryBroker
-
 from app.logger import logger
 from config import settings
 
-broker = InMemoryBroker()
 
-
-@broker.task(retry_on_error=True, max_retries=3)
 async def transcode_hls(video_id: int, src_path: str):
     """后台将视频转码为 HLS"""
     from app.database import AsyncSessionLocal
@@ -76,7 +71,6 @@ async def transcode_hls(video_id: int, src_path: str):
         logger.warning("hls_transcode_failed", video_id=video_id)
 
 
-@broker.task(retry_on_error=True, max_retries=2)
 async def refresh_video_url(video_id: int, page_url: str):
     """后台刷新抓取视频的播放地址"""
     if not page_url:
@@ -104,8 +98,7 @@ async def refresh_video_url(video_id: int, page_url: str):
 
 
 async def download_scraped_video(scraped_id: int, source_url: str):
-    """下载抓取的视频到本地（目前保持原实现，通过 asyncio.create_task 调用）"""
-    from app.routes.admin import _do_download
+    """下载抓取的视频到本地"""
+    from app.routes.admin.scraper import _do_download
 
-    # _do_download 内部已有完整的状态管理和错误处理
     await _do_download(scraped_id, source_url)

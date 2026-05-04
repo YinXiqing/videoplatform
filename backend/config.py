@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
+    COOKIE_SECURE: bool = False
 
     RESEND_API_KEY: str = ""
     RESEND_FROM: str = "noreply@resend.dev"

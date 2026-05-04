@@ -3,6 +3,7 @@ import { Pencil, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { RequireAdmin } from "@/components/AuthGuard";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import Toast from "@/components/Toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,6 +26,7 @@ export default function AdminUsers() {
 	const [search, setSearch] = useState("");
 	const [editing, setEditing] = useState<User | null>(null);
 	const [confirm, setConfirm] = useState<ConfirmState>({ isOpen: false });
+	const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
 	const fetchUsers = useCallback(async () => {
 		setLoading(true);
@@ -34,7 +36,8 @@ export default function AdminUsers() {
 			});
 			setUsers(res.data.users);
 			setTotalPages(res.data.pages);
-		} catch {
+		} catch (e: any) {
+			showToast(e?.response?.data?.detail || "获取用户列表失败", "error");
 		} finally {
 			setLoading(false);
 		}
@@ -43,6 +46,9 @@ export default function AdminUsers() {
 	useEffect(() => {
 		fetchUsers();
 	}, [fetchUsers]);
+
+	const showToast = (msg: string, type: "success" | "error" = "success") =>
+		setToast({ msg, type });
 
 	const deleteUser = (id: number) =>
 		setConfirm({
@@ -85,7 +91,6 @@ export default function AdminUsers() {
 							onSubmit={(e) => {
 								e.preventDefault();
 								setPage(1);
-								fetchUsers();
 							}}
 							className="flex gap-2"
 						>

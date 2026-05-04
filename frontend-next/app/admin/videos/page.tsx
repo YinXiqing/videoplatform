@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { RequireAdmin } from "@/components/AuthGuard";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import Toast from "@/components/Toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -59,6 +60,7 @@ function AdminVideosInner() {
 	const [selected, setSelected] = useState<number[]>([]);
 	const [editing, setEditing] = useState<Video | null>(null);
 	const [confirm, setConfirm] = useState<ConfirmState>({ isOpen: false });
+	const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 	const [preview, setPreview] = useState<Video | null>(null);
 
 	const fetchVideos = useCallback(async () => {
@@ -70,7 +72,8 @@ function AdminVideosInner() {
 			setVideos(res.data.videos);
 			setTotalPages(res.data.pages);
 			setSelected([]);
-		} catch {
+		} catch (e: any) {
+			showToast(e?.response?.data?.detail || "获取视频列表失败", "error");
 		} finally {
 			setLoading(false);
 		}
@@ -83,7 +86,11 @@ function AdminVideosInner() {
 		setPage(1);
 	}, []);
 
+	const showToast = (msg: string, type: "success" | "error" = "success") =>
+		setToast({ msg, type });
+
 	const bulkUpdate = async (status: string, ids?: number[]) => {
+		try {
 		const toUpdate = ids ?? selected;
 		if (!toUpdate.length) return;
 		await api.post("/admin/videos/bulk-update", {
@@ -91,6 +98,10 @@ function AdminVideosInner() {
 			status,
 		});
 		fetchVideos();
+		showToast("操作成功");
+		} catch (e: any) {
+		showToast(e?.response?.data?.detail || "操作失败", "error");
+		}
 	};
 
 	const deleteVideo = (id: number) =>
@@ -122,6 +133,7 @@ function AdminVideosInner() {
 	};
 
 	const saveEdit = async () => {
+		try {
 		if (!editing) return;
 		await api.put(`/admin/videos/${editing.id}`, {
 			title: editing.title,
@@ -130,6 +142,10 @@ function AdminVideosInner() {
 		});
 		setEditing(null);
 		fetchVideos();
+		showToast("保存成功");
+		} catch (e: any) {
+		showToast(e?.response?.data?.detail || "保存失败", "error");
+		}
 	};
 
 	const allSelected = videos.length > 0 && selected.length === videos.length;
@@ -175,7 +191,6 @@ function AdminVideosInner() {
 							onSubmit={(e) => {
 								e.preventDefault();
 								setPage(1);
-								fetchVideos();
 							}}
 							className="flex gap-2 sm:ml-auto"
 						>
