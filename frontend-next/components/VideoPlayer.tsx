@@ -1,6 +1,7 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Toast from "@/components/Toast";
@@ -29,6 +30,7 @@ type ConfirmState = {
 
 export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 	const { isAdmin, user } = useAuth();
+	const router = useRouter();
 	const [video, setVideo] = useState<Video>(initialVideo);
 	const [playError, setPlayError] = useState<string | false>(false);
 	const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
@@ -38,6 +40,8 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 	} | null>(null);
 	const [confirm, setConfirm] = useState<ConfirmState>({ isOpen: false });
 	const [favorited, setFavorited] = useState(false);
+	const [liked, setLiked] = useState(false);
+	const [disliked, setDisliked] = useState(false);
 	const [following, setFollowing] = useState(false);
 	const [followerCount, setFollowerCount] = useState(0);
 	const videoRef = useRef<HTMLVideoElement>(null);
@@ -203,6 +207,10 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 			.then((r) => setFavorited(r.data.favorited))
 			.catch(() => {});
 	}, [video.id, user]);
+			api
+				.get("/video/rate/" + video.id + "/status")
+				.then((r) => { setLiked(r.data.liked); setDisliked(r.data.disliked); })
+				.catch(() => {});
 
 	useEffect(() => {
 		if (!user) return;
@@ -216,11 +224,19 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 			.catch(() => {});
 	}, [video.user_id, user]);
 
+	const rateVideo = async (type: string) => {
+		try {
+			const res = await api.post("/video/rate/" + video.id, { type });
+			setLiked(res.data.liked);
+			setDisliked(res.data.disliked);
+		} catch {}
+	};
+
 	const toggleFollow = async () => {
 		try {
 			const res = await api.post(`/follow/${video.user_id}`);
 			setFollowing(res.data.following);
-			showToast(res.data.following ? "已关注" : "已取消关注");
+			showToast(res.data.following ? "已订阅" : "已取消订阅");
 		} catch {
 			showToast("操作失败", "error");
 		}
@@ -331,9 +347,8 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 							<span>{dur(video.duration)}</span>
 						</div>
 						<div className="flex items-center gap-2">
-							{user && (
 								<button
-									onClick={toggleFavorite}
+									onClick={user ? toggleFavorite : () => router.push("/login")}
 									className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${
 										favorited
 											? "bg-red-50 dark:bg-red-900/20 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30"
@@ -353,9 +368,25 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 											d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
 										/>
 									</svg>
-									{favorited ? "已收藏" : "收藏"}
+								{favorited ? "已收藏" : "收藏"}
 								</button>
-							)}
+								<button
+									onClick={user ? () => rateVideo(liked ? "null" : "like") : () => router.push("/login")}
+									className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${liked ? "bg-primary-100 dark:bg-primary-900/20 text-primary-600" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]"}`}
+								>
+									<svg className="w-4 h-4" fill={liked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"/>
+									</svg>
+									{liked ? "已赞" : "赞"}
+								</button>
+								<button
+									onClick={user ? () => rateVideo(disliked ? "null" : "dislike") : () => router.push("/login")}
+									className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${disliked ? "bg-red-50 dark:bg-red-900/20 text-red-500" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]"}`}
+								>
+									<svg className="w-4 h-4" fill={disliked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5"/>
+									</svg>
+								</button>
 
 							{user ? (
 								<a
@@ -437,16 +468,16 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 								{followerCount} 位粉丝
 							</p>
 						</div>
-						{user && user.id !== video.user_id && (
+						{user?.id !== video.user_id && (
 							<button
-								onClick={toggleFollow}
-								className={`ml-auto px-3 py-1.5 text-sm rounded-lg transition-colors ${
+								onClick={user ? toggleFollow : () => router.push("/login")}
+								className={`shrink-0 px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
 									following
 										? "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400"
 										: "bg-primary-600 text-white hover:bg-primary-700"
 								}`}
 							>
-								{following ? "已关注" : "关注"}
+								{following ? "已订阅" : "订阅"}
 							</button>
 						)}
 					</div>

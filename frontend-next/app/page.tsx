@@ -26,7 +26,7 @@ export default async function Home() {
 
 	return (
 		<div className="min-h-screen bg-gray-50 dark:bg-[#0f0f0f]">
-			<section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+			<section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
 				<VideoList
 					initialVideos={videos}
 					initialTags={tags}

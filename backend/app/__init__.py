@@ -114,6 +114,8 @@ def create_app() -> FastAPI:
     app.include_router(follow_router)
     from app.routes.ws import router as ws_router
     app.include_router(ws_router)
+    from app.routes.user import router as user_router
+    app.include_router(user_router)
 
     from fastapi.staticfiles import StaticFiles
     settings.UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)

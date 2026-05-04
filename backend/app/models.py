@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Integer, String, Text, Boolean, BigInteger, DateTime, ForeignKey
+from sqlalchemy import Integer, String, Text, Boolean, BigInteger, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import bcrypt as _bcrypt
 from app.database import Base
@@ -13,6 +13,8 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    avatar: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
@@ -31,6 +33,7 @@ class User(Base):
         return {
             "id": self.id, "username": self.username, "email": self.email,
             "role": self.role, "is_active": self.is_active,
+            "avatar": self.avatar, "bio": self.bio,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -107,6 +110,18 @@ class Favorite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     video: Mapped["Video"] = relationship("Video", lazy="select")
+
+
+class VideoLike(Base):
+    __tablename__ = "video_likes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    video_id: Mapped[int] = mapped_column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(10), nullable=False)  # "like" or "dislike"
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+
+    __table_args__ = (UniqueConstraint("user_id", "video_id", name="uq_user_video_like"),)
 
 
 class Follow(Base):

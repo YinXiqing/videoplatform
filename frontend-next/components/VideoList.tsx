@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import VideoCard from "@/components/VideoCard";
 import api from "@/lib/api";
 import type { Video } from "@/types";
@@ -29,8 +30,9 @@ export default function VideoList({
 }: VideoListProps) {
 	const [videos, setVideos] = useState<Video[]>(initialVideos);
 	const [allTags, setAllTags] = useState<string[]>(initialTags);
-	const [activeTag, setActiveTag] = useState("");
-	const [sortBy, setSortBy] = useState("newest");
+	const searchParams = useSearchParams();
+	const activeTag = searchParams.get("tag") || "";
+	const sortBy = searchParams.get("sort") || "newest";
 	const [page, setPage] = useState(1);
 	const [hasMore, setHasMore] = useState(initialHasMore);
 	const [loadingMore, setLoadingMore] = useState(false);
@@ -97,45 +99,7 @@ export default function VideoList({
 
 	return (
 		<>
-			<div className="flex justify-between items-center mb-4">
-				<h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-					推荐视频
-				</h2>
-				<div className="flex items-center gap-2">
-					{["newest", "popular"].map((s) => (
-						<button
-							key={s}
-							onClick={() => setSortBy(s)}
-							className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${sortBy === s ? "bg-primary-600 text-white" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 dark:bg-[#333]"}`}
-						>
-							{s === "newest" ? "最新" : "最热"}
-						</button>
-					))}
-				</div>
-			</div>
 
-			{allTags.length > 0 && (
-				<div className="relative mb-4">
-					<div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
-						<button
-							onClick={() => setActiveTag("")}
-							className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors shrink-0 ${activeTag === "" ? "bg-primary-600 text-white" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"}`}
-						>
-							全部
-						</button>
-						{allTags.slice(0, 20).map((tag) => (
-							<button
-								key={tag}
-								onClick={() => setActiveTag(activeTag === tag ? "" : tag)}
-								className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors shrink-0 ${activeTag === tag ? "bg-primary-600 text-white" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"}`}
-							>
-								{tag}
-							</button>
-						))}
-					</div>
-					<div className="absolute right-0 top-0 bottom-1 w-8 bg-gradient-to-l from-gray-50 dark:from-[#0f0f0f] to-transparent pointer-events-none" />
-				</div>
-			)}
 
 			{videos.length > 0 ? (
 				<>

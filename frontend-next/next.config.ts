@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const API_URL = process.env.BACKEND_URL || "http://localhost:5000";
 
 const nextConfig: NextConfig = {
-	reactStrictMode: true,
+	reactStrictMode: false,
 	devIndicators: false,
 	allowedDevOrigins: ["192.168.1.16"],
 	experimental: {
