@@ -2,23 +2,17 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import RelatedVideos from "@/components/RelatedVideos";
 import Toast from "@/components/Toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { useVideoPlayback } from "@/hooks/useVideoPlayback";
+import { useVideoControls } from "@/hooks/useVideoControls";
+import { useVideoSocial } from "@/hooks/useVideoSocial";
 import api from "@/lib/api";
+import { dur, fmt } from "@/lib/utils";
 import type { Video } from "@/types";
-
-const dur = (s: number | null) =>
-	s
-		? `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`
-		: "00:00";
-const fmt = (v: number) =>
-	v >= 1e6
-		? `${(v / 1e6).toFixed(1)}M`
-		: v >= 1e3
-			? `${(v / 1e3).toFixed(1)}K`
-			: String(v);
 
 type ConfirmState = {
 	isOpen: boolean;
@@ -32,20 +26,17 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 	const { isAdmin, user } = useAuth();
 	const router = useRouter();
 	const [video, setVideo] = useState<Video>(initialVideo);
-	const [playError, setPlayError] = useState<string | false>(false);
 	const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
-	const [toast, setToast] = useState<{
-		msg: string;
-		type: "success" | "error";
-	} | null>(null);
+	const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 	const [confirm, setConfirm] = useState<ConfirmState>({ isOpen: false });
-	const [favorited, setFavorited] = useState(false);
-	const [liked, setLiked] = useState(false);
-	const [disliked, setDisliked] = useState(false);
-	const [following, setFollowing] = useState(false);
-	const [followerCount, setFollowerCount] = useState(0);
-	const videoRef = useRef<HTMLVideoElement>(null);
-	const hlsRef = useRef<any>(null);
+
+	const { videoRef, playError, retry } = useVideoPlayback(video.id);
+	useVideoControls(videoRef);
+	const {
+		favorited, liked, disliked,
+		following, followerCount,
+		rateVideo, toggleFollow, toggleFavorite,
+	} = useVideoSocial(video.id, video.user_id);
 
 	const showToast = (msg: string, type: "success" | "error" = "success") =>
 		setToast({ msg, type });
@@ -68,189 +59,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 	useEffect(() => {
 		window.scrollTo(0, 0);
 		fetchRelated();
-		if (user) api.post(`/video/history/${video.id}`).catch(() => {});
-		setPlayError(false);
-
-		const el = videoRef.current;
-		if (!el) return;
-
-		const restoreProgress = () => {
-			const saved = parseFloat(localStorage.getItem(`vp_${video.id}`) ?? "0");
-			if (saved > 5) el.currentTime = saved;
-		};
-
-		api
-			.get(`/video/stream/${video.id}`)
-			.then(async ({ data }) => {
-				if (hlsRef.current) {
-					hlsRef.current.destroy();
-					hlsRef.current = null;
-				}
-
-				if (data.is_hls) {
-					const url = data.video_url;
-					const { default: Hls } = await import("hls.js");
-
-					if (Hls.isSupported()) {
-						const hls = new Hls({ enableWorker: true });
-						hlsRef.current = hls;
-						hls.loadSource(url);
-						hls.attachMedia(el);
-						hls.on(Hls.Events.MANIFEST_PARSED, () => {
-							restoreProgress();
-							el.play().catch(() => {});
-						});
-						hls.on(Hls.Events.ERROR, (_: any, d: any) => {
-							if (d.fatal) setPlayError("error");
-						});
-					} else if (el.canPlayType("application/vnd.apple.mpegurl")) {
-						el.src = url;
-						el.onloadedmetadata = restoreProgress;
-					}
-				} else {
-					el.src = data.video_url;
-					el.onloadedmetadata = restoreProgress;
-					el.play().catch(() => {});
-				}
-			})
-			.catch((e) => {
-				setPlayError(e?.response?.status === 503 ? "processing" : "error");
-			});
-
-		const saveProgress = () =>
-			localStorage.setItem(`vp_${video.id}`, String(el.currentTime));
-		let lastSave = 0;
-		const throttledSave = () => {
-			const now = Date.now();
-			if (now - lastSave >= 5000) {
-				lastSave = now;
-				saveProgress();
-			}
-		};
-		el.addEventListener("timeupdate", throttledSave);
-		return () => {
-			el.removeEventListener("timeupdate", throttledSave);
-			hlsRef.current?.destroy();
-			hlsRef.current = null;
-		};
-	}, [video.id, user, fetchRelated]);
-
-	// 键盘快捷键
-	useEffect(() => {
-		const el = videoRef.current;
-		if (!el) return;
-		const handleKey = (e: KeyboardEvent) => {
-			const tag = (e.target as HTMLElement).tagName;
-			if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-			switch (e.key) {
-				case " ":
-					e.preventDefault();
-					el.paused ? el.play().catch(() => {}) : el.pause();
-					break;
-				case "ArrowLeft":
-					e.preventDefault();
-					el.currentTime = Math.max(0, el.currentTime - 10);
-					break;
-				case "ArrowRight":
-					e.preventDefault();
-					el.currentTime = Math.min(el.duration || 0, el.currentTime + 10);
-					break;
-				case "f":
-				case "F":
-					e.preventDefault();
-					if (document.fullscreenElement) document.exitFullscreen();
-					else el.requestFullscreen();
-					break;
-			}
-		};
-		document.addEventListener("keydown", handleKey);
-		return () => document.removeEventListener("keydown", handleKey);
-	}, []);
-
-	// 移动端手势
-	useEffect(() => {
-		const el = videoRef.current;
-		if (!el) return;
-		let sx = 0,
-			sy = 0,
-			mx = 0,
-			my = 0;
-		const onTouchStart = (e: TouchEvent) => {
-			sx = e.touches[0].clientX;
-			sy = e.touches[0].clientY;
-		};
-		const onTouchEnd = (e: TouchEvent) => {
-			mx = e.changedTouches[0].clientX - sx;
-			my = e.changedTouches[0].clientY - sy;
-			const absX = Math.abs(mx),
-				absY = Math.abs(my);
-			if (absX < 30 && absY < 30) return;
-			if (absX > absY) {
-				// 水平滑动 -> 快进/快退
-				if (mx > 0)
-					el.currentTime = Math.min(el.duration || 0, el.currentTime + 10);
-				else el.currentTime = Math.max(0, el.currentTime - 10);
-			}
-		};
-		el.addEventListener("touchstart", onTouchStart, { passive: true });
-		el.addEventListener("touchend", onTouchEnd, { passive: true });
-		return () => {
-			el.removeEventListener("touchstart", onTouchStart);
-			el.removeEventListener("touchend", onTouchEnd);
-		};
-	}, []);
-
-	useEffect(() => {
-		if (!user) return;
-		api
-			.get(`/video/favorited/${video.id}`)
-			.then((r) => setFavorited(r.data.favorited))
-			.catch(() => {});
-		api
-			.get("/video/rate/" + video.id + "/status")
-			.then((r) => { setLiked(r.data.liked); setDisliked(r.data.disliked); })
-			.catch(() => {});
-	}, [video.id, user]);
-
-	useEffect(() => {
-		if (!user) return;
-		api
-			.get(`/follow/${video.user_id}/status`)
-			.then((r) => setFollowing(r.data.following))
-			.catch(() => {});
-		api
-			.get(`/follow/${video.user_id}/count`)
-			.then((r) => setFollowerCount(r.data.followers))
-			.catch(() => {});
-	}, [video.user_id, user]);
-
-	const rateVideo = async (type: string) => {
-		try {
-			const res = await api.post("/video/rate/" + video.id, { type });
-			setLiked(res.data.liked);
-			setDisliked(res.data.disliked);
-		} catch {}
-	};
-
-	const toggleFollow = async () => {
-		try {
-			const res = await api.post(`/follow/${video.user_id}`);
-			setFollowing(res.data.following);
-			showToast(res.data.following ? "已订阅" : "已取消订阅");
-		} catch {
-			showToast("操作失败", "error");
-		}
-	};
-
-	const toggleFavorite = async () => {
-		try {
-			const res = await api.post(`/video/favorite/${video.id}`);
-			setFavorited(res.data.favorited);
-			showToast(res.data.favorited ? "已收藏 ✓" : "已取消收藏");
-		} catch {
-			showToast("操作失败", "error");
-		}
-	};
+	}, [fetchRelated]);
 
 	const handleApprove = () =>
 		setConfirm({
@@ -262,7 +71,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 				try {
 					await api.put(`/admin/videos/${video.id}`, { status: "approved" });
 					setVideo({ ...video, status: "approved" });
-					showToast("视频已通过审核 ✓");
+					showToast("视频已通过审核");
 				} catch {
 					showToast("操作失败", "error");
 				}
@@ -296,48 +105,24 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 				<div className="bg-black rounded-xl overflow-hidden aspect-video relative">
 					{playError ? (
 						<div className="w-full h-full flex flex-col items-center justify-center text-white gap-3">
-							<svg
-								className="w-12 h-12 text-gray-400"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-							>
-								<path
-									strokeLinecap="round"
-									strokeLinejoin="round"
-									strokeWidth={1.5}
-									d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-								/>
+							<svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
 							</svg>
 							<p className="text-gray-300 text-sm">
 								{playError === "processing" ? "视频正在处理中" : "视频加载失败"}
 							</p>
-							<button
-								onClick={() => {
-									setPlayError(false);
-									setVideo({ ...video });
-								}}
-								className="px-4 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm transition-colors"
-							>
+							<button onClick={retry} className="px-4 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm transition-colors">
 								重试
 							</button>
 						</div>
 					) : (
-						<video
-							ref={videoRef}
-							controls
-							muted
-							className="w-full h-full object-contain"
-							crossOrigin="anonymous"
-							poster={video.cover_image ? coverSrc : undefined}
-						/>
+						<video ref={videoRef} controls muted className="w-full h-full object-contain" crossOrigin="anonymous" poster={video.cover_image ? coverSrc : undefined} />
 					)}
 				</div>
 
 				<div className="bg-white dark:bg-[#1f1f1f] rounded-xl shadow-sm mt-4 p-6">
-					<h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">
-						{video.title}
-					</h1>
+					<h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">{video.title}</h1>
+
 					<div className="flex items-center justify-between mb-4">
 						<div className="flex items-center text-sm text-gray-500 dark:text-gray-400 gap-3">
 							<span>{fmt(video.view_count)} 次观看</span>
@@ -346,110 +131,64 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 							<span>•</span>
 							<span>{dur(video.duration)}</span>
 						</div>
+
 						<div className="flex items-center gap-2">
-								<button
-									onClick={user ? toggleFavorite : () => router.push("/login")}
-									className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${
-										favorited
-											? "bg-red-50 dark:bg-red-900/20 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30"
-											: "bg-gray-100 dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]"
-									}`}
-								>
-									<svg
-										className="w-4 h-4"
-										fill={favorited ? "currentColor" : "none"}
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											strokeLinecap="round"
-											strokeLinejoin="round"
-											strokeWidth={2}
-											d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-										/>
-									</svg>
+							<button
+								onClick={user ? toggleFavorite : () => router.push("/login")}
+								className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${favorited ? "bg-red-50 dark:bg-red-900/20 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]"}`}
+							>
+								<svg className="w-4 h-4" fill={favorited ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+								</svg>
 								{favorited ? "已收藏" : "收藏"}
-								</button>
-								<button
-									onClick={user ? () => rateVideo(liked ? "null" : "like") : () => router.push("/login")}
-									className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${liked ? "bg-primary-100 dark:bg-primary-900/20 text-primary-600" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]"}`}
-								>
-									<svg className="w-4 h-4" fill={liked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"/>
-									</svg>
-									{liked ? "已赞" : "赞"}
-								</button>
-								<button
-									onClick={user ? () => rateVideo(disliked ? "null" : "dislike") : () => router.push("/login")}
-									className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${disliked ? "bg-red-50 dark:bg-red-900/20 text-red-500" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]"}`}
-								>
-									<svg className="w-4 h-4" fill={disliked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5"/>
-									</svg>
-								</button>
+							</button>
+
+							<button
+								onClick={user ? () => rateVideo(liked ? "null" : "like") : () => router.push("/login")}
+								className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${liked ? "bg-primary-100 dark:bg-primary-900/20 text-primary-600" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]"}`}
+							>
+								<svg className="w-4 h-4" fill={liked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
+								</svg>
+								{liked ? "已赞" : "赞"}
+							</button>
+
+							<button
+								onClick={user ? () => rateVideo(disliked ? "null" : "dislike") : () => router.push("/login")}
+								className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${disliked ? "bg-red-50 dark:bg-red-900/20 text-red-500" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]"}`}
+							>
+								<svg className="w-4 h-4" fill={disliked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
+								</svg>
+							</button>
 
 							{user ? (
 								<a
 									href={`/api/video/download/${video.id}`}
 									className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#333] text-gray-700 dark:text-gray-300 text-sm rounded-lg transition-colors"
 								>
-									<svg
-										className="w-4 h-4"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											strokeLinecap="round"
-											strokeLinejoin="round"
-											strokeWidth={2}
-											d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-										/>
+									<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
 									</svg>
 									下载
 								</a>
 							) : (
-								<a
-									href="/login"
-									className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#333] text-gray-700 dark:text-gray-300 text-sm rounded-lg transition-colors"
-								>
-									<svg
-										className="w-4 h-4"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											strokeLinecap="round"
-											strokeLinejoin="round"
-											strokeWidth={2}
-											d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-										/>
+								<Link href="/login" className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-[#2a2a2a] hover:bg-gray-200 dark:hover:bg-[#333] text-gray-700 dark:text-gray-300 text-sm rounded-lg transition-colors">
+									<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
 									</svg>
 									下载
-								</a>
+								</Link>
 							)}
 						</div>
 					</div>
 
 					{isAdmin() && video.status === "pending" && (
 						<div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
-							<p className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-3">
-								管理员审核操作
-							</p>
+							<p className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-3">管理员审核操作</p>
 							<div className="flex gap-3">
-								<button
-									onClick={handleApprove}
-									className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700"
-								>
-									通过审核
-								</button>
-								<button
-									onClick={handleReject}
-									className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700"
-								>
-									拒绝视频
-								</button>
+								<button onClick={handleApprove} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700">通过审核</button>
+								<button onClick={handleReject} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700">拒绝视频</button>
 							</div>
 						</div>
 					)}
@@ -461,21 +200,13 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 							</span>
 						</div>
 						<div>
-							<p className="font-medium text-gray-900 dark:text-gray-100">
-								{video.author || "未知用户"}
-							</p>
-							<p className="text-xs text-gray-400 dark:text-gray-500">
-								{followerCount} 位粉丝
-							</p>
+							<p className="font-medium text-gray-900 dark:text-gray-100">{video.author || "未知用户"}</p>
+							<p className="text-xs text-gray-400 dark:text-gray-500">{followerCount} 位粉丝</p>
 						</div>
 						{user?.id !== video.user_id && (
 							<button
 								onClick={user ? toggleFollow : () => router.push("/login")}
-								className={`shrink-0 px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
-									following
-										? "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400"
-										: "bg-primary-600 text-white hover:bg-primary-700"
-								}`}
+								className={`shrink-0 px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${following ? "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400" : "bg-primary-600 text-white hover:bg-primary-700"}`}
 							>
 								{following ? "已订阅" : "订阅"}
 							</button>
@@ -483,19 +214,12 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 					</div>
 
 					{video.description && (
-						<p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap text-sm">
-							{video.description}
-						</p>
+						<p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap text-sm">{video.description}</p>
 					)}
 					{(video.tags?.length ?? 0) > 0 && (
 						<div className="mt-4 flex flex-wrap gap-2">
 							{video.tags?.map((tag, i) => (
-								<span
-									key={i}
-									className="px-3 py-1 bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 text-sm rounded-full"
-								>
-									{tag}
-								</span>
+								<span key={i} className="px-3 py-1 bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 text-sm rounded-full">{tag}</span>
 							))}
 						</div>
 					)}
@@ -503,57 +227,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 			</div>
 
 			<div>
-				<div className="bg-white dark:bg-[#1f1f1f] rounded-xl shadow-sm p-4">
-					<h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-						相关推荐
-					</h3>
-					{relatedVideos.length > 0 ? (
-						<div className="relative">
-							<div className="flex lg:flex-col gap-3 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0 scrollbar-none">
-								{relatedVideos.map((rv) => (
-									<Link
-										key={rv.id}
-										href={`/video/${rv.id}`}
-										className="flex gap-3 group flex-shrink-0 w-64 lg:w-auto"
-									>
-										<div className="w-32 h-20 rounded overflow-hidden flex-shrink-0 relative bg-gray-900">
-											{rv.cover_image ? (
-												<Image
-													src={`/api/video/cover/${rv.id}`}
-													alt={rv.title}
-													fill
-													className="object-cover"
-													sizes="128px"
-												/>
-											) : (
-												<div className="w-full h-full bg-gradient-to-br from-primary-400 to-primary-600" />
-											)}
-											<div className="absolute bottom-1 right-1 bg-black/70 text-white text-xs px-1 py-0.5 rounded">
-												{dur(rv.duration)}
-											</div>
-										</div>
-										<div className="flex-1 min-w-0">
-											<h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-2 group-hover:text-primary-600">
-												{rv.title}
-											</h4>
-											<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-												{rv.author}
-											</p>
-											<p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-												{fmt(rv.view_count)} 次观看
-											</p>
-										</div>
-									</Link>
-								))}
-							</div>
-							<div className="lg:hidden absolute right-0 top-0 bottom-2 w-10 bg-gradient-to-l from-white dark:from-[#1f1f1f] to-transparent pointer-events-none" />
-						</div>
-					) : (
-						<p className="text-gray-500 dark:text-gray-400 text-sm">
-							暂无相关推荐视频
-						</p>
-					)}
-				</div>
+				<RelatedVideos videos={relatedVideos} />
 			</div>
 
 			<ConfirmDialog
@@ -566,13 +240,7 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 				confirmText="确认"
 				cancelText="取消"
 			/>
-			{toast && (
-				<Toast
-					message={toast.msg}
-					type={toast.type}
-					onClose={() => setToast(null)}
-				/>
-			)}
+			{toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
 		</div>
 	);
 }

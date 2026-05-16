@@ -2,15 +2,16 @@
 import { Menu, Upload, Bell, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSidebar } from "@/contexts/SidebarContext";
 import NotificationBell from "./NotificationBell";
-import Sidebar from "./Sidebar";
 import ThemeToggle from "./ThemeToggle";
 import api from "@/lib/api";
 
 export default function Navbar() {
 	const { user, logout } = useAuth();
+	const { toggle } = useSidebar();
 	const pathname = usePathname();
 	const router = useRouter();
 	const searchParams = useSearchParams();
@@ -18,8 +19,6 @@ export default function Navbar() {
 	const [showHistory, setShowHistory] = useState(false);
 	const [searchHistory, setSearchHistory] = useState<string[]>([]);
 	const [suggestions, setSuggestions] = useState<string[]>([]);
-	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
 	useEffect(() => {
 		if (pathname === "/search") setQ(searchParams.get("search") || "");
@@ -75,32 +74,34 @@ export default function Navbar() {
 
 	return (
 		<>
-			<Sidebar open={sidebarOpen} onClose={closeSidebar} />
-
-			<header className="bg-white dark:bg-[#1a1a1a] border-b border-gray-100 dark:border-gray-800 sticky top-0 z-30">
-				<div className="px-4 sm:px-6 lg:px-8">
-					<div className="flex items-center h-14 max-w-7xl mx-auto">
-						{/* 左侧：汉堡 + Logo */}
-						<div className="flex items-center gap-2 flex-shrink-0 z-10">
-							<button
-								onClick={() => setSidebarOpen((v) => !v)}
-								className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-								aria-label="菜单"
-							>
-								<Menu className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-							</button>
-							<Link href="/" className="flex items-center gap-2">
-								<div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center">
-									<svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-										<path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" />
-									</svg>
-								</div>
-								<span className="hidden sm:block text-base font-bold text-gray-900 dark:text-gray-100">视频平台</span>
-							</Link>
+			<header className="bg-white dark:bg-[#0f0f0f] sticky top-0 z-30">
+				<div className="flex items-center h-14">
+					<div className="hidden md:flex flex-shrink-0 items-center justify-center w-16">
+						<button
+							onClick={toggle}
+							className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+							aria-label="菜单"
+						>
+							<Menu className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+						</button>
+					</div>
+					<button
+						onClick={toggle}
+						className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex-shrink-0 ml-2"
+						aria-label="菜单"
+					>
+						<Menu className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+					</button>
+					<Link href="/" className="flex items-center gap-2 flex-shrink-0 ml-1 md:ml-0">
+						<div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center">
+							<svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+								<path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" />
+							</svg>
 						</div>
-
-						{/* 搜索栏（桌面居中） */}
-						<form onSubmit={handleSearch} className="hidden md:block absolute left-1/2 -translate-x-1/2 w-full max-w-lg px-4">
+						<span className="hidden sm:block text-base font-bold text-gray-900 dark:text-gray-100">视频平台</span>
+					</Link>
+					<div className="hidden md:flex flex-1 justify-center px-4">
+						<form onSubmit={handleSearch} className="w-full max-w-lg">
 							<div className="relative">
 								<input type="text" value={q} onChange={(e) => setQ(e.target.value)}
 									onFocus={() => setShowHistory(true)}
@@ -135,60 +136,55 @@ export default function Navbar() {
 								)}
 							</div>
 						</form>
-
-						{/* 右侧 */}
-						<div className="flex items-center gap-2 ml-auto z-10">
-							{user ? (
-								<>
-									<Link href="/upload"
-										className="hidden sm:flex items-center gap-1 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors px-2 py-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
-										<Upload className="w-4 h-4" />
-										<span className="hidden md:block">上传</span>
-									</Link>
-									<ThemeToggle />
-									<NotificationBell />
-									<Link href="/profile"
-										className="w-8 h-8 rounded-full overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center hover:ring-2 hover:ring-primary-300 transition-all"
-										title="个人设置">
-										{user.avatar ? (
-											<img src={`/uploads/${user.avatar}`} alt="" className="w-full h-full object-cover" loading="lazy" />
-										) : (
-											<span className="text-sm font-semibold text-primary-700">{user.username.charAt(0).toUpperCase()}</span>
-										)}
-									</Link>
-									<button onClick={handleLogout}
-										className="px-3 py-1.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-										title="退出登录">
-										退出
-									</button>
-								</>
-							) : (
-								<>
-									<ThemeToggle />
-									<Link href="/login" className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 px-2">登录</Link>
-									<Link href="/register" className="bg-primary-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors">注册</Link>
-								</>
-							)}
-						</div>
 					</div>
-
-					{/* 搜索栏（移动端） */}
-					<div className="md:hidden pb-2">
-						<form onSubmit={handleSearch} className="relative">
-							<input type="text" value={q} onChange={(e) => setQ(e.target.value)}
-								placeholder="搜索视频..."
-								className="w-full pl-4 pr-9 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#2a2a2a] dark:text-gray-100 dark:placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all" />
-							<button type="submit" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary-600">
-								<Search className="w-3.5 h-3.5" />
-							</button>
-						</form>
+					<div className="flex items-center gap-2 flex-shrink-0 pr-4">
+						{user ? (
+							<>
+								<Link href="/upload"
+									className="hidden sm:flex items-center gap-1 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors px-2 py-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
+									<Upload className="w-4 h-4" />
+									<span className="hidden md:block">上传</span>
+								</Link>
+								<ThemeToggle />
+								<NotificationBell />
+								<Link href="/profile"
+									className="w-8 h-8 rounded-full overflow-hidden bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center hover:ring-2 hover:ring-primary-300 transition-all"
+									title="个人设置">
+									{user.avatar ? (
+										<img src={`/uploads/${user.avatar}`} alt="" className="w-full h-full object-cover" loading="lazy" />
+									) : (
+										<span className="text-sm font-semibold text-primary-700">{user.username.charAt(0).toUpperCase()}</span>
+									)}
+								</Link>
+								<button onClick={handleLogout}
+									className="px-3 py-1.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+									title="退出登录">
+									退出
+								</button>
+							</>
+						) : (
+							<>
+								<ThemeToggle />
+								<Link href="/login" className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 px-2">登录</Link>
+								<Link href="/register" className="bg-primary-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors">注册</Link>
+							</>
+						)}
 					</div>
+				</div>
+				<div className="md:hidden px-4 pb-2">
+					<form onSubmit={handleSearch} className="relative">
+						<input type="text" value={q} onChange={(e) => setQ(e.target.value)}
+							placeholder="搜索视频..."
+							className="w-full pl-4 pr-9 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#2a2a2a] dark:text-gray-100 dark:placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all" />
+						<button type="submit" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary-600">
+							<Search className="w-3.5 h-3.5" />
+						</button>
+					</form>
 				</div>
 			</header>
 
-			{/* 移动端底部导航 */}
 			{!pathname.startsWith("/admin") && !pathname.startsWith("/video/") && (
-				<nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#1a1a1a] border-t border-gray-200 dark:border-gray-800 z-50 flex">
+				<nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#0f0f0f] border-t border-gray-200 dark:border-gray-800 z-50 flex">
 					{[
 						{ href: "/", label: "首页", d: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
 						{ href: "/search", label: "搜索", d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" },

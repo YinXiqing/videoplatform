@@ -149,7 +149,7 @@ function VideoCard({
 	return (
 		<div
 			ref={cardRef}
-			className="group bg-white dark:bg-[#1f1f1f] rounded-xl shadow-sm overflow-hidden hover:shadow-md dark:hover:shadow-black/30 transition-shadow"
+			className="group bg-white dark:bg-[#1f1f1f] rounded-xl shadow-sm overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
 			onMouseEnter={handleEnter}
 			onMouseLeave={handleLeave}
 		>

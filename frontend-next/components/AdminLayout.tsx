@@ -1,16 +1,7 @@
 "use client";
-import {
-	ExternalLink,
-	LayoutDashboard,
-	LogOut,
-	Menu,
-	Rss,
-	Users,
-	Video,
-} from "lucide-react";
+import { ExternalLink, LayoutDashboard, LogOut, Rss, Users, Video } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
@@ -21,105 +12,60 @@ const navItems = [
 	{ href: "/admin/scraper", label: "视频抓取", icon: Rss },
 ];
 
-function SidebarContent({ onNav }: { onNav?: () => void }) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
 	const pathname = usePathname();
 	const { logout } = useAuth();
+
 	return (
-		<div className="flex flex-col h-full">
-			<div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800">
-				<Link href="/" className="text-lg font-bold text-primary-600">
-					视频平台
-				</Link>
-				<p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-					管理后台
-				</p>
-			</div>
-			<nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-				{navItems.map(({ href, label, icon: Icon, exact }) => {
-					const active = exact ? pathname === href : pathname.startsWith(href);
-					return (
-						<Link
-							key={href}
-							href={href}
-							onClick={onNav}
-							className={cn(
-								"flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
-								active
-									? "bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 font-medium"
-									: "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800",
-							)}
-						>
-							<Icon className="w-4 h-4 shrink-0" />
-							{label}
+		<div className="min-h-screen bg-gray-100 dark:bg-[#0a0a0a]">
+			<header className="bg-white dark:bg-[#0f0f0f] border-b border-gray-200 dark:border-gray-800">
+				<div className="px-4 sm:px-6">
+					<div className="flex items-center gap-6 overflow-x-auto scrollbar-none">
+						<Link href="/admin" className="flex items-center gap-2 shrink-0 py-3 mr-2">
+							<span className="text-base font-bold text-gray-900 dark:text-gray-100">
+								管理后台
+							</span>
 						</Link>
-					);
-				})}
-			</nav>
-			<div className="px-3 py-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
-				<Link
-					href="/"
-					onClick={onNav}
-					className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-				>
-					<ExternalLink className="w-4 h-4" />
-					前台首页
-				</Link>
-				<button
-					onClick={logout}
-					className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-				>
-					<LogOut className="w-4 h-4" />
-					退出登录
-				</button>
-			</div>
-		</div>
-	);
-}
-
-export default function AdminLayout({
-	children,
-}: {
-	children: React.ReactNode;
-}) {
-	const [open, setOpen] = useState(false);
-
-	return (
-		<div className="flex h-screen bg-gray-100 dark:bg-[#0a0a0a]">
-			{/* 桌面侧边栏 */}
-			<aside className="hidden lg:flex w-56 shrink-0 flex-col bg-white dark:bg-[#111] border-r border-gray-200 dark:border-gray-800">
-				<SidebarContent />
-			</aside>
-
-			{/* 移动端遮罩 */}
-			{open && (
-				<div className="fixed inset-0 z-40 lg:hidden">
-					<div
-						className="absolute inset-0 bg-black/50"
-						onClick={() => setOpen(false)}
-					/>
-					<aside className="absolute left-0 top-0 h-full w-64 bg-white dark:bg-[#111] shadow-xl">
-						<SidebarContent onNav={() => setOpen(false)} />
-					</aside>
+						<nav className="flex items-center gap-1">
+							{navItems.map(({ href, label, icon: Icon, exact }) => {
+								const active = exact ? pathname === href : pathname.startsWith(href);
+								return (
+									<Link
+										key={href}
+										href={href}
+										className={cn(
+											"flex items-center gap-2 px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+											active
+												? "border-primary-600 text-primary-600 dark:text-primary-400"
+												: "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600",
+										)}
+									>
+										<Icon className="w-4 h-4" />
+										{label}
+									</Link>
+								);
+							})}
+						</nav>
+						<div className="flex items-center gap-2 ml-auto shrink-0 py-2">
+							<Link
+								href="/"
+								className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+							>
+								<ExternalLink className="w-4 h-4" />
+								<span className="hidden sm:inline">前台</span>
+							</Link>
+							<button
+								onClick={logout}
+								className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+							>
+								<LogOut className="w-4 h-4" />
+								<span className="hidden sm:inline">退出</span>
+							</button>
+						</div>
+					</div>
 				</div>
-			)}
-
-			{/* 主内容区 */}
-			<div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-				{/* 移动端顶部栏 */}
-				<header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-[#111] border-b border-gray-200 dark:border-gray-800 shrink-0">
-					<button
-						onClick={() => setOpen(true)}
-						className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-					>
-						<Menu className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-					</button>
-					<span className="font-semibold text-gray-900 dark:text-gray-100">
-						管理后台
-					</span>
-				</header>
-
-				<main className="flex-1 overflow-auto">{children}</main>
-			</div>
+			</header>
+			<main>{children}</main>
 		</div>
 	);
 }

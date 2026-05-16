@@ -32,11 +32,12 @@ export default function VideoList({
 	const [allTags, setAllTags] = useState<string[]>(initialTags);
 	const searchParams = useSearchParams();
 	const router = useRouter();
-		const activeTag = searchParams.get("tag") || "";
+	const activeTag = searchParams.get("tag") || "";
 	const sortBy = searchParams.get("sort") || "newest";
 	const [page, setPage] = useState(1);
 	const [hasMore, setHasMore] = useState(initialHasMore);
 	const [loadingMore, setLoadingMore] = useState(false);
+	const [showBackTop, setShowBackTop] = useState(false);
 	const sentinelRef = useRef<HTMLDivElement>(null);
 	const stateRef = useRef({ page, activeTag, sortBy, hasMore, loadingMore });
 	stateRef.current = { page, activeTag, sortBy, hasMore, loadingMore };
@@ -53,7 +54,6 @@ export default function VideoList({
 				if (tag) params.tag = tag;
 				const res = await api.get("/video/list", { params });
 				const { videos: newVids, pages } = res.data;
-				// replace=true 时替换（切换 tag/sort），false 时追加（加载更多）
 				setVideos((prev) => (replace ? newVids : [...prev, ...newVids]));
 				setHasMore(p < pages);
 				const tagSet = new Set<string>();
@@ -72,7 +72,6 @@ export default function VideoList({
 		[],
 	);
 
-	// 切换 tag/sort 时重置并替换数据（不清空，避免空白闪烁）
 	useEffect(() => {
 		setPage(1);
 		fetchVideos(1, activeTag, sortBy, true);
@@ -98,10 +97,21 @@ export default function VideoList({
 		return () => obs.disconnect();
 	}, [fetchVideos]);
 
+	// 回到顶部：监听滚动位置
+	useEffect(() => {
+		const onScroll = () => {
+			setShowBackTop(window.scrollY > 800);
+		};
+		window.addEventListener("scroll", onScroll, { passive: true });
+		return () => window.removeEventListener("scroll", onScroll);
+	}, []);
+
+	const scrollToTop = () => {
+		window.scrollTo({ top: 0, behavior: "smooth" });
+	};
+
 	return (
 		<>
-
-
 			{videos.length > 0 ? (
 				<>
 					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -141,6 +151,19 @@ export default function VideoList({
 						</button>
 					)}
 				</div>
+			)}
+
+			{/* 回到顶部 */}
+			{showBackTop && (
+				<button
+					onClick={scrollToTop}
+					className="fixed bottom-20 md:bottom-6 right-6 z-40 w-10 h-10 bg-white dark:bg-[#2a2a2a] border border-gray-200 dark:border-gray-700 rounded-full shadow-lg flex items-center justify-center hover:shadow-xl hover:scale-110 transition-all"
+					aria-label="回到顶部"
+				>
+					<svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+					</svg>
+				</button>
 			)}
 		</>
 	);

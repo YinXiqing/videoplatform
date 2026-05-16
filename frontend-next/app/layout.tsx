@@ -2,7 +2,9 @@ import "./globals.css";
 import type { ReactNode } from "react";
 import Navbar from "@/components/Navbar";
 import TagBar from "@/components/TagBar";
+import Sidebar from "@/components/Sidebar";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { SidebarProvider } from "@/contexts/SidebarContext";
 import { QueryProvider } from "@/lib/query";
 
 export const viewport = { themeColor: "#e11d48" };
@@ -34,10 +36,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 				/>
 				<QueryProvider>
 					<AuthProvider>
-						<Navbar />
-						<TagBar />
-						<main className="flex-1">{children}</main>
-						<div id="mobile-nav-spacer" className="md:hidden h-16" />
+						<SidebarProvider>
+							<Navbar />
+							<div className="flex">
+								<Sidebar />
+								<div className="flex-1 min-w-0">
+									<TagBar />
+									<main className="flex-1">{children}</main>
+									<div id="mobile-nav-spacer" className="md:hidden h-16" />
+								</div>
+							</div>
+						</SidebarProvider>
 					</AuthProvider>
 				</QueryProvider>
 			</body>

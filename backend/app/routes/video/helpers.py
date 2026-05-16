@@ -76,41 +76,6 @@ async def _extract_cover(video_path, cover_filename) -> bool:
         return False
 
 
-async def _transcode_hls(video_id: int, src_path):
-    """后台异步将视频转码为 HLS"""
-    try:
-        import subprocess
-        from app.database import AsyncSessionLocal
-        hls_dir = settings.UPLOAD_FOLDER / "hls" / str(video_id)
-        hls_dir.mkdir(parents=True, exist_ok=True)
-        m3u8_path = hls_dir / "index.m3u8"
-        loop = asyncio.get_running_loop()
-        is_mp4 = str(src_path).lower().endswith(".mp4")
-
-        def _run():
-            codec_args = ["-c", "copy"] if is_mp4 else ["-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart"]
-            r = subprocess.run([
-                get_ffmpeg_exe(), "-y", "-i", str(src_path),
-                *codec_args,
-                "-start_number", "0",
-                "-hls_time", "10",
-                "-hls_list_size", "0",
-                "-hls_segment_filename", str(hls_dir / "seg%03d.ts"),
-                "-f", "hls", str(m3u8_path),
-            ], capture_output=True, timeout=600)
-            return r.returncode == 0
-
-        ok = await loop.run_in_executor(None, _run)
-        async with AsyncSessionLocal() as db:
-            await db.execute(update(Video).where(Video.id == video_id).values(hls_ready=ok))
-            await db.commit()
-        if ok:
-            logger.info("hls_ready", video_id=video_id)
-        else:
-            logger.warning("hls_transcode_failed", video_id=video_id)
-    except Exception as e:
-        logger.error("hls_transcode_error", video_id=video_id, error=str(e))
-
 
 async def _delete_video_files(video: Video):
     """删除视频关联的本地文件（跳过外链）"""

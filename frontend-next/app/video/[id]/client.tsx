@@ -102,7 +102,7 @@ export default function VideoDetailClient({
 	return (
 		<div>
 			{/* 移动端顶部导航栏 */}
-			<div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-[#1a1a1a] border-b border-gray-100 dark:border-gray-800">
+			<div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-[#0f0f0f] border-b border-gray-100 dark:border-gray-800">
 				<button
 					onClick={() => router.back()}
 					className="p-1.5 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
