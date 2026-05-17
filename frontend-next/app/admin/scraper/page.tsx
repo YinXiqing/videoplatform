@@ -106,7 +106,7 @@ export default function AdminScraper() {
 		try {
 			const res = await api.get("/admin/scraped?status=all&per_page=50");
 			setVideos(res.data.scraped_videos);
-		} catch {}
+		} catch (e) { console.error("scraper fetch failed:", e) }
 	}, []);
 
 	useEffect(() => {
@@ -132,7 +132,7 @@ export default function AdminScraper() {
 					if (download_status === "done") showToast("下载完成，可以发布了");
 					if (download_status === "failed") showToast("下载失败", "error");
 				}
-			} catch {}
+			} catch (e) { console.error("scraper fetch failed:", e) }
 		}, 2000);
 	}, []);
 
@@ -257,7 +257,7 @@ export default function AdminScraper() {
 		if (previewVideo.status === "published" && previewVideo.video_id) {
 			playUrl = `/api/video/hls/${previewVideo.video_id}/index.m3u8`;
 		} else if (previewVideo.download_status === "done") {
-			playUrl = `/uploads/hls/${previewVideo.id}/index.m3u8`;
+			playUrl = `/api/admin/scraped/${previewVideo.id}/hls/index.m3u8`;
 		} else if (previewVideo.is_m3u8 && previewVideo.video_url) {
 			playUrl = `/api/admin/proxy?url=${encodeURIComponent(previewVideo.video_url)}`;
 		}

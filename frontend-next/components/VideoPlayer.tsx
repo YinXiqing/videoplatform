@@ -1,8 +1,8 @@
 "use client";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import RelatedVideos from "@/components/RelatedVideos";
 import Toast from "@/components/Toast";
@@ -26,40 +26,36 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 	const { isAdmin, user } = useAuth();
 	const router = useRouter();
 	const [video, setVideo] = useState<Video>(initialVideo);
-	const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
 	const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 	const [confirm, setConfirm] = useState<ConfirmState>({ isOpen: false });
 
 	const { videoRef, playError, retry } = useVideoPlayback(video.id);
 	useVideoControls(videoRef);
 	const {
-		favorited, liked, disliked,
+		favorited,
 		following, followerCount,
-		rateVideo, toggleFollow, toggleFavorite,
+		toggleFollow, toggleFavorite,
 	} = useVideoSocial(video.id, video.user_id);
 
 	const showToast = (msg: string, type: "success" | "error" = "success") =>
 		setToast({ msg, type });
 
-	const fetchRelated = useCallback(async () => {
-		try {
-			const tags = (video.tags || []).filter(Boolean);
+	const tags = (video.tags || []).filter(Boolean);
+	const { data: relatedVideos = [] } = useQuery({
+		queryKey: ["related-videos", video.id, tags[0] || "", video.title || ""],
+		queryFn: async () => {
 			const params: Record<string, any> = { per_page: 8 };
 			if (tags.length > 0) params.tag = tags[0];
 			else params.search = video.title?.slice(0, 10);
 			const res = await api.get("/video/list", { params });
-			setRelatedVideos(
-				res.data.videos.filter((r: Video) => r.id !== video.id).slice(0, 6),
-			);
-		} catch {
-			setRelatedVideos([]);
-		}
-	}, [video.id, video.tags, video.title]);
+			return res.data.videos.filter((r: Video) => r.id !== video.id).slice(0, 6);
+		},
+		enabled: !!video.id,
+	});
 
 	useEffect(() => {
 		window.scrollTo(0, 0);
-		fetchRelated();
-	}, [fetchRelated]);
+	}, [video.id]);
 
 	const handleApprove = () =>
 		setConfirm({
@@ -141,25 +137,6 @@ export default function VideoPlayer({ video: initialVideo }: { video: Video }) {
 									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
 								</svg>
 								{favorited ? "已收藏" : "收藏"}
-							</button>
-
-							<button
-								onClick={user ? () => rateVideo(liked ? "null" : "like") : () => router.push("/login")}
-								className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${liked ? "bg-primary-100 dark:bg-primary-900/20 text-primary-600" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]"}`}
-							>
-								<svg className="w-4 h-4" fill={liked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
-								</svg>
-								{liked ? "已赞" : "赞"}
-							</button>
-
-							<button
-								onClick={user ? () => rateVideo(disliked ? "null" : "dislike") : () => router.push("/login")}
-								className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${disliked ? "bg-red-50 dark:bg-red-900/20 text-red-500" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]"}`}
-							>
-								<svg className="w-4 h-4" fill={disliked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
-								</svg>
 							</button>
 
 							{user ? (

@@ -1,7 +1,22 @@
 "use client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
+
+function useTags() {
+	return useQuery({
+		queryKey: ["tags"],
+		queryFn: async () => {
+			const res = await api.get("/video/list", { params: { page: 1, per_page: 50 } });
+			const tagSet = new Set<string>();
+			(res.data.videos || []).forEach((v: any) =>
+				(v.tags || []).forEach((t: string) => t.trim() && tagSet.add(t.trim())),
+			);
+			return [...tagSet].sort((a, b) => a.localeCompare(b, "zh"));
+		},
+		staleTime: 5 * 60 * 1000,
+	});
+}
 
 export default function TagBar() {
 	const pathname = usePathname();
@@ -9,96 +24,53 @@ export default function TagBar() {
 	const searchParams = useSearchParams();
 	const activeTag = searchParams.get("tag") || "";
 	const sortBy = searchParams.get("sort") || "newest";
-	const query = searchParams.get("search") || "";
-	const isSearch = pathname === "/search";
-	const [allTags, setAllTags] = useState<string[]>([]);
-	const [total, setTotal] = useState(0);
 
-	const fetchedRef = useRef<string | null>(null);
-	useEffect(() => {
-		if (pathname === "/") {
-			if (fetchedRef.current === "/") return;
-			fetchedRef.current = "/";
-			api.get("/video/list", { params: { page: 1, per_page: 50 } })
-				.then((res) => {
-					const tags = new Set<string>();
-					(res.data.videos || []).forEach((v: any) =>
-						(v.tags || []).forEach((t: string) => t.trim() && tags.add(t.trim())),
-					);
-					setAllTags([...tags]);
-				})
-				.catch(() => {});
-		} else if (isSearch) {
-			const params: any = { page: 1, per_page: 50 };
-			if (query) params.search = query;
-			api.get("/video/list", { params })
-				.then((res) => {
-					setTotal(res.data.total || 0);
-					const tags = new Set<string>();
-					(res.data.videos || []).forEach((v: any) =>
-						(v.tags || []).forEach((t: string) => t.trim() && tags.add(t.trim())),
-					);
-					setAllTags([...tags]);
-				})
-				.catch(() => {});
-		}
-	}, [pathname, isSearch, query]);
+	const { data: tags = [] } = useTags();
 
-	if (pathname !== "/" && !isSearch) return null;
+	if (pathname !== "/") return null;
 
-	const setTag = (tag: string) => {
+	const setParam = (key: string, value: string) => {
 		const params = new URLSearchParams(searchParams.toString());
-		if (tag) params.set("tag", tag);
-		else params.delete("tag");
+		if (value) params.set(key, value);
+		else params.delete(key);
 		router.push(`?${params.toString()}`);
 	};
 
-	const setSort = (s: string) => {
-		const params = new URLSearchParams(searchParams.toString());
-		if (s === "popular") params.set("sort", "popular");
-		else params.delete("sort");
-		router.push(`?${params.toString()}`);
-	};
+	const btn = (key: string, active: boolean, label: string, onClick: () => void) => (
+		<button
+			key={key}
+			onClick={onClick}
+			className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors shrink-0 ${
+				active
+					? "bg-primary-600 text-white"
+					: "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
+			}`}
+		>
+			{label}
+		</button>
+	);
 
 	return (
 		<div className="bg-white dark:bg-[#0f0f0f] sticky top-14 z-20">
 			<div className="px-4 sm:px-6 lg:px-4">
-				<div className="flex items-center gap-2 overflow-x-auto scrollbar-none py-2">
-					{isSearch && query && (
-						<span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap shrink-0">
-							"{query}" 的搜索结果 共 {total} 个视频
-						</span>
+				<div className="flex items-center gap-3 overflow-x-auto scrollbar-none py-2">
+					{/* 排序 */}
+					{btn("sort-newest", activeTag === "" && sortBy === "newest", "最新", () => {
+						setParam("sort", "");
+						setParam("tag", "");
+					})}
+					{btn("sort-popular", sortBy === "popular", "最热", () => setParam("sort", "popular"))}
+
+					{/* 分隔 */}
+					<div className="w-px h-5 bg-gray-300 dark:bg-gray-700 shrink-0" />
+
+					{/* 标签 */}
+					{btn("tag-all", activeTag === "", "全部", () => setParam("tag", ""))}
+					{tags.map((tag) =>
+						btn(tag, activeTag === tag, tag, () =>
+							setParam("tag", activeTag === tag ? "" : tag),
+						),
 					)}
-					<button
-						onClick={() => setTag("")}
-						className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors shrink-0 ${
-							activeTag === "" ? "bg-primary-600 text-white" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-						}`}
-					>
-						全部
-					</button>
-					{["newest", "popular"].map((s) => (
-						<button
-							key={s}
-							onClick={() => setSort(s)}
-							className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors shrink-0 ${
-								sortBy === s ? "bg-primary-600 text-white" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-							}`}
-						>
-							{s === "newest" ? "最新" : "最热"}
-						</button>
-					))}
-					{allTags.slice(0, 20).map((tag) => (
-						<button
-							key={tag}
-							onClick={() => setTag(activeTag === tag ? "" : tag)}
-							className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors shrink-0 ${
-								activeTag === tag ? "bg-primary-600 text-white" : "bg-gray-100 dark:bg-[#2a2a2a] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-							}`}
-						>
-							{tag}
-						</button>
-					))}
 				</div>
 			</div>
 		</div>

@@ -3,14 +3,7 @@ import axios from "axios";
 const api = axios.create({
 	baseURL: "/api",
 	headers: { "Content-Type": "application/json" },
-});
-
-api.interceptors.request.use((config) => {
-	if (typeof window !== "undefined") {
-		const token = localStorage.getItem("token");
-		if (token) config.headers.Authorization = `Bearer ${token}`;
-	}
-	return config;
+	withCredentials: true, // 自动携带 httpOnly cookie
 });
 
 api.interceptors.response.use(
@@ -21,7 +14,6 @@ api.interceptors.response.use(
 			typeof window !== "undefined" &&
 			!window.location.pathname.startsWith("/login")
 		) {
-			localStorage.removeItem("token");
 			window.location.href = "/login";
 		}
 		return Promise.reject(error);

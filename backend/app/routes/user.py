@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.deps import get_db, get_current_user, get_optional_user
 from app.models import User, Video, Follow, Favorite
 from config import settings
-from app.routes.video.helpers import _check_image_magic, _ext
+from app.routes.video.helpers import _check_image_magic, _ext, paginate
 
 router = APIRouter(prefix="/api/user", tags=["user"])
 
@@ -65,26 +65,31 @@ async def get_user_videos(user_id: int, page: int = 1, per_page: int = Query(12,
     q = (select(Video).options(selectinload(Video.author_rel))
          .where(Video.user_id == user_id, Video.status == "approved")
          .order_by(Video.created_at.desc()))
-    total = (await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar_one()
-    items = (await db.execute(q.offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    items, total, pages = await paginate(db, q, page, per_page)
     return {"videos": [v.to_dict() for v in items], "total": total,
-            "pages": -(-total // per_page), "current_page": page, "per_page": per_page}
+            "pages": pages, "current_page": page, "per_page": per_page}
 
 
 @router.get("/{user_id}/following")
 async def get_user_following(user_id: int, db: AsyncSession = Depends(get_db)):
     """该作者关注了哪些人"""
-    rows = (await db.execute(
-        select(Follow).where(Follow.follower_id == user_id).order_by(Follow.created_at.desc())
+    followed_ids = (await db.execute(
+        select(Follow.followed_id).where(Follow.follower_id == user_id)
+        .order_by(Follow.created_at.desc())
     )).scalars().all()
 
-    users = []
-    for f in rows:
-        u = await db.get(User, f.followed_id)
-        if u:
-            users.append({"id": u.id, "username": u.username, "avatar": u.avatar})
+    if not followed_ids:
+        return {"users": []}
 
-    return {"users": users}
+    users = (await db.execute(
+        select(User.id, User.username, User.avatar).where(User.id.in_(followed_ids))
+    )).all()
+    id_order = {uid: i for i, uid in enumerate(followed_ids)}
+    result = sorted(
+        [{"id": uid, "username": uname, "avatar": avatar} for uid, uname, avatar in users],
+        key=lambda x: id_order.get(x["id"], 9999),
+    )
+    return {"users": result}
 
 
 @router.get("/{user_id}/favorites")
@@ -94,12 +99,11 @@ async def get_user_favorites(user_id: int, page: int = 1, per_page: int = Query(
     q = (select(Favorite).options(selectinload(Favorite.video).selectinload(Video.author_rel))
          .where(Favorite.user_id == user_id)
          .order_by(Favorite.created_at.desc()))
-    total = (await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar_one()
-    items = (await db.execute(q.offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    items, total, pages = await paginate(db, q, page, per_page)
     return {
         "favorites": [{"created_at": h.created_at.isoformat(), "video": h.video.to_dict()}
                       for h in items if h.video],
-        "total": total, "pages": -(-total // per_page), "current_page": page,
+        "total": total, "pages": pages, "current_page": page,
     }
 
 

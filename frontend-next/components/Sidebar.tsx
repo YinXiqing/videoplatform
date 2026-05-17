@@ -103,7 +103,6 @@ export default function Sidebar() {
 							<>
 								{navItem(`/user/${user.id}`, <User className="w-5 h-5" />, "我的频道")}
 								{navItem("/history", <History className="w-5 h-5" />, "历史记录")}
-								{navItem("/liked", <ThumbsUp className="w-5 h-5" />, "赞过的视频")}
 								{navItem("/favorites", <Heart className="w-5 h-5" />, "我的收藏")}
 								{navItem("/my-videos", <Video className="w-5 h-5" />, "我的视频")}
 								{isAdmin() && navItem("/admin", <Shield className="w-5 h-5" />, "管理后台")}

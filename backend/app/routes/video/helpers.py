@@ -1,13 +1,51 @@
 """视频模块共享工具函数（被 routes/video 子模块、admin、tasks 导入）"""
 
-from imageio_ffmpeg import get_ffmpeg_exe
-import re, asyncio, json
+import shutil
+import re, asyncio, json, time, hashlib
 from app.logger import logger
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from app.models import Video
 from config import settings
-import aiohttp
+import aiohttp, aiofiles
+import cachetools
+
+# 共享的 aiohttp session，复用连接池
+_shared_session: aiohttp.ClientSession | None = None
+
+
+def _get_session() -> aiohttp.ClientSession:
+    global _shared_session
+    if _shared_session is None or _shared_session.closed:
+        _shared_session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=30),
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+        )
+    return _shared_session
+
+
+async def async_close_session():
+    global _shared_session
+    if _shared_session and not _shared_session.closed:
+        await _shared_session.close()
+        _shared_session = None
+
+
+async def paginate(db: AsyncSession, base_stmt, page: int, per_page: int) -> tuple[list, int, int]:
+    """分页工具：返回 (items, total, total_pages)。合并 count + data 为一个子查询，减少样板代码。"""
+    subq = base_stmt.order_by(None).subquery()
+    total = (await db.execute(select(func.count()).select_from(subq))).scalar_one()
+    items = (await db.execute(
+        base_stmt.offset((page - 1) * per_page).limit(per_page)
+    )).scalars().all()
+    return items, total, -(-total // per_page)
+
+
+def get_ffmpeg_exe() -> str:
+    exe = shutil.which("ffmpeg")
+    if not exe:
+        raise RuntimeError("ffmpeg 未找到，请安装 ffmpeg 并确保其在 PATH 中")
+    return exe
 
 
 def _ext(fn):
@@ -106,43 +144,64 @@ async def _delete_video(db: AsyncSession, video: Video):
 
 async def _check_url(url):
     try:
-        async with aiohttp.ClientSession() as s:
-            async with s.head(url, timeout=aiohttp.ClientTimeout(total=5), ssl=False) as r:
-                return r.status < 400
-    except Exception:
+        async with _get_session().head(url, timeout=aiohttp.ClientTimeout(total=5), ssl=False) as r:
+            return r.status < 400
+    except Exception as e:
+        logger.warning("check_url_failed", url=url[:120], error=str(e))
         return False
 
 
+def _ydlp_extract(url: str, format_str: str = "", extractor_args: dict | None = None):
+    """共享的 yt-dlp 信息提取（同步函数，需在线程池中运行）。
+    返回 (title, cover_url, duration, video_url, http_headers, is_m3u8) 元组。
+    """
+    import yt_dlp
+    ydl_opts = {
+        "quiet": True, "no_warnings": True, "skip_download": True,
+        "noplaylist": True, "socket_timeout": 20,
+    }
+    if format_str:
+        ydl_opts["format"] = format_str
+    if extractor_args:
+        ydl_opts["extractor_args"] = extractor_args
+    if settings.YT_PROXY:
+        ydl_opts["proxy"] = settings.YT_PROXY
+    if settings.YT_COOKIES_FILE:
+        ydl_opts["cookiefile"] = settings.YT_COOKIES_FILE
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    title = re.sub(r"\s*\(\d+\)$", "", info.get("title", "") or "").strip() or "Untitled"
+    cover_url = info.get("thumbnail", "")
+    duration = int(info.get("duration") or 0)
+    fmts = info.get("formats", [])
+    m3u8 = [f for f in fmts if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("url") and f.get("vcodec") != "none"]
+    direct = [f for f in fmts if f.get("url") and f.get("vcodec") not in (None, "none")]
+
+    best = (max(m3u8, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if m3u8
+            else max(direct, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if direct
+            else {})
+    video_url = best.get("url") or info.get("url", "")
+    if video_url.endswith(".m3u") and not video_url.endswith(".m3u8"):
+        video_url += "8"
+
+    http_headers = dict(best.get("http_headers") or {})
+    if url not in http_headers.get("Referer", ""):
+        http_headers["Referer"] = url
+
+    return title, cover_url, duration, video_url, http_headers, bool(m3u8)
+
+
 async def _get_fresh_url(page_url: str) -> tuple[str, dict]:
-    """返回 (video_url, http_headers)"""
+    """返回 (video_url, http_headers) —— 用于 URL 刷新"""
     if not page_url:
         return "", {}
     try:
-        import yt_dlp
-        ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, "socket_timeout": 20}
-        if settings.YT_PROXY:
-            ydl_opts["proxy"] = settings.YT_PROXY
-        if settings.YT_COOKIES_FILE:
-            ydl_opts["cookiefile"] = settings.YT_COOKIES_FILE
-
-        def _run():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(page_url, download=False)
-            fmts = info.get("formats", [])
-            m3u8 = [f for f in fmts if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("url") and f.get("vcodec") != "none"]
-            direct = [f for f in fmts if f.get("url") and f.get("vcodec") not in (None, "none")]
-            best = (max(m3u8, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if m3u8
-                    else max(direct, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if direct
-                    else {})
-            url = best.get("url") or info.get("url", "")
-            if url.endswith(".m3u") and not url.endswith(".m3u8"):
-                url += "8"
-            headers = dict(best.get("http_headers") or {})
-            if page_url not in headers.get("Referer", ""):
-                headers["Referer"] = page_url
-            return url, headers
-
-        return await asyncio.get_running_loop().run_in_executor(None, _run)
+        _, _, _, url, headers, _ = await asyncio.get_running_loop().run_in_executor(
+            None, _ydlp_extract, page_url,
+        )
+        return url, headers
     except Exception:
         return "", {}
 
@@ -162,13 +221,56 @@ async def _refresh_url_bg(video_id, page_url):
         logger.warning("url_refresh_failed", video_id=video_id, error=str(e))
 
 
+import ipaddress
+
 BLOCKED = re.compile(
     r"^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|\[::\]|::1|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)",
     re.I,
 )
 
-# 未登录用户播放量去重：{(ip, video_id): timestamp}
-_ip_view_cache: dict[tuple, float] = {}
+def _is_private_ip(hostname: str) -> bool:
+    """用 ipaddress 模块二次校验，防止十六进制/十进制 IP 绕过正则"""
+    try:
+        ip = ipaddress.ip_address(hostname)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_unspecified
+    except ValueError:
+        return False
 
-# 上传防重复：{(user_id, content_hash): timestamp}
-_upload_cache: dict[tuple, float] = {}
+# 未登录用户播放量去重：{(ip, video_id): timestamp}，1 小时 TTL，自动淘汰
+_ip_view_cache = cachetools.TTLCache(maxsize=10000, ttl=3600)
+
+# 上传防重复：{(user_id, content_hash): timestamp}，5 分钟 TTL，自动淘汰
+_upload_cache = cachetools.TTLCache(maxsize=5000, ttl=300)
+
+# 远程封面图本地缓存：{url_hash: 本地文件名}，24h 过期
+_cover_disk_cache = cachetools.TTLCache(maxsize=2000, ttl=86400)
+
+
+async def _cache_remote_cover(cover_url: str, referer: str) -> str:
+    """首次下载远端封面到本地，后续直接返回本地路径避免重复下载"""
+    cache_key = cover_url.split("?")[0]
+    if cache_key in _cover_disk_cache:
+        cached = _cover_disk_cache[cache_key]
+        if (settings.UPLOAD_FOLDER / cached).exists():
+            return cached
+    try:
+        ext = cache_key.rsplit(".", 1)[-1].lower()
+        if ext not in ("jpg", "jpeg", "png", "webp"):
+            ext = "jpg"
+        fname = f"cached_cover_{hashlib.md5(cache_key.encode()).hexdigest()}.{ext}"
+        fpath = settings.UPLOAD_FOLDER / fname
+        if fpath.exists():
+            _cover_disk_cache[cache_key] = fname
+            return fname
+        async with _get_session().get(cover_url,
+                headers={"User-Agent": "Mozilla/5.0", "Referer": referer},
+                ssl=False, timeout=aiohttp.ClientTimeout(total=10)) as r:
+            if r.status >= 400:
+                return cover_url
+            content = await r.read()
+        async with aiofiles.open(fpath, "wb") as f:
+            await f.write(content)
+        _cover_disk_cache[cache_key] = fname
+        return fname
+    except Exception:
+        return cover_url

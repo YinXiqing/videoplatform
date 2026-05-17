@@ -42,7 +42,8 @@ async def metrics(db: AsyncSession = Depends(get_db), _: User = Depends(require_
     """基础指标端点 - 用于监控"""
     from app.models import User, Video
     from sqlalchemy import func, select
-    
+    from app.database import engine
+
     try:
         total_users = (await db.execute(select(func.count(User.id)))).scalar_one()
         total_videos = (await db.execute(select(func.count(Video.id)))).scalar_one()
@@ -52,11 +53,10 @@ async def metrics(db: AsyncSession = Depends(get_db), _: User = Depends(require_
         pending_videos = (await db.execute(
             select(func.count(Video.id)).where(Video.status == "pending")
         )).scalar_one()
-        
+
+        pool = engine.pool
         return {
-            "users": {
-                "total": total_users
-            },
+            "users": {"total": total_users},
             "videos": {
                 "total": total_videos,
                 "approved": approved_videos,
@@ -65,6 +65,12 @@ async def metrics(db: AsyncSession = Depends(get_db), _: User = Depends(require_
             "storage": {
                 "upload_folder": str(settings.UPLOAD_FOLDER),
                 "exists": settings.UPLOAD_FOLDER.exists()
+            },
+            "database_pool": {
+                "size": pool.size(),
+                "checked_in": pool.checkedin(),
+                "checked_out": pool.checkedout(),
+                "overflow": pool.overflow(),
             }
         }
     except Exception as e:

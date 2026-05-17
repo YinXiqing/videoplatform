@@ -4,12 +4,12 @@ import asyncio
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, or_, func, update
+from sqlalchemy import select, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.deps import get_db, get_current_user, get_optional_user
 from app.models import Video, User
-from app.routes.video.helpers import _check_url, _delete_video
+from app.routes.video.helpers import _check_url, _delete_video, paginate
 
 router = APIRouter(tags=["video"])
 
@@ -27,10 +27,9 @@ async def list_videos(
     if tag:
         q = q.where(Video.tags.ilike(f"%{tag}%"))
     order = Video.view_count.desc() if sort == "popular" else Video.created_at.asc() if sort == "oldest" else Video.created_at.desc()
-    total = (await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar_one()
-    items = (await db.execute(q.order_by(order).offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    items, total, pages = await paginate(db, q.order_by(order), page, per_page)
     return {"videos": [v.to_dict() for v in items], "total": total,
-            "pages": -(-total // per_page), "current_page": page, "per_page": per_page}
+            "pages": pages, "current_page": page, "per_page": per_page}
 
 
 @router.get("/suggest")
@@ -67,10 +66,9 @@ async def get_my_videos(page: int = 1, per_page: int = Query(10, le=100),
                         db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     q = (select(Video).options(selectinload(Video.author_rel))
          .where(Video.user_id == user.id).order_by(Video.created_at.desc()))
-    total = (await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar_one()
-    items = (await db.execute(q.offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    items, total, pages = await paginate(db, q, page, per_page)
     return {"videos": [v.to_dict() for v in items], "total": total,
-            "pages": -(-total // per_page), "current_page": page, "per_page": per_page}
+            "pages": pages, "current_page": page, "per_page": per_page}
 
 
 class VideoUpdate(BaseModel):

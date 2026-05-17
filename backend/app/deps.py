@@ -1,14 +1,27 @@
 from typing import AsyncGenerator
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
+from jwt import PyJWTError as JWTError
+import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+import cachetools
 from app.database import AsyncSessionLocal
 from app.models import User
 from config import settings
 
 bearer = HTTPBearer(auto_error=False)
+
+# Token 黑名单：logout 后 token 在有效期内加入黑名单
+_revoked_tokens = cachetools.TTLCache(maxsize=10000, ttl=settings.JWT_EXPIRE_HOURS * 3600)
+
+
+def revoke_token(token: str):
+    _revoked_tokens[token] = True
+
+
+def _is_revoked(token: str) -> bool:
+    return token in _revoked_tokens
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
@@ -28,7 +41,9 @@ async def get_current_user(
     token = get_token_from_request(request, credentials)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    
+    if _is_revoked(token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
+
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         user_id: int = int(payload.get("sub"))
@@ -51,7 +66,7 @@ async def get_optional_user(
     db: AsyncSession = Depends(get_db),
 ) -> User | None:
     token = get_token_from_request(request, credentials)
-    if not token:
+    if not token or _is_revoked(token):
         return None
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])

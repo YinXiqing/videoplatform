@@ -1,16 +1,14 @@
 from contextlib import asynccontextmanager
-import time
+import time, uuid
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from app.logger import logger
+from app.logger import logger, request_id_ctx
+from app.limiter import limiter
 from config import settings
-
-limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 async def _run_migrations():
     """自动数据库迁移：检测模型变更并同步到数据库（启动时自动执行）"""
@@ -62,6 +60,17 @@ async def lifespan(app: FastAPI):
         )
         await db.commit()
     yield
+    from app.routes.video.helpers import async_close_session
+    await async_close_session()
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    """为每个请求注入唯一 request_id，写入日志上下文和响应头"""
+    async def dispatch(self, request: Request, call_next):
+        rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+        request_id_ctx.set(rid)
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        return response
 
 class LimitBodySizeMiddleware(BaseHTTPMiddleware):
     """非上传接口限制请求体 1MB"""
@@ -85,6 +94,9 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+    from starlette.middleware.gzip import GZipMiddleware
+    app.add_middleware(GZipMiddleware, minimum_size=500)
+    app.add_middleware(RequestIDMiddleware)
     app.add_middleware(LimitBodySizeMiddleware)
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(
@@ -98,7 +110,8 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         logger.error("unhandled_exception", path=request.url.path, error=str(exc), exc_info=True)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+        return JSONResponse(status_code=500, content={"detail": "Internal server error",
+                                                       "request_id": request_id_ctx.get()})
 
     from app.routes.auth import router as auth_router
     from app.routes.video import router as video_router
@@ -114,9 +127,5 @@ def create_app() -> FastAPI:
     app.include_router(ws_router)
     from app.routes.user import router as user_router
     app.include_router(user_router)
-
-    from fastapi.staticfiles import StaticFiles
-    settings.UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
-    app.mount("/uploads", StaticFiles(directory=str(settings.UPLOAD_FOLDER)), name="uploads")
 
     return app

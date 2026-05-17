@@ -16,9 +16,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const [loading, setLoading] = useState(true);
 
 	const logout = () => {
-		api.post("/auth/logout").catch(() => {});
-		localStorage.removeItem("token");
-		localStorage.removeItem("user");
+		api.post("/auth/logout").catch((e) => console.error("logout failed:", e));
 		setUser(null);
 	};
 
@@ -26,32 +24,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		try {
 			const res = await api.get("/auth/profile");
 			setUser(res.data.user);
-			localStorage.setItem("user", JSON.stringify(res.data.user));
 		} catch {
-			logout();
+			setUser(null);
 		}
 	};
 
 	useEffect(() => {
-		const token = localStorage.getItem("token");
-		if (!token) {
-			setLoading(false);
-			return;
-		}
-		const cached = localStorage.getItem("user");
-		if (cached) {
-			try {
-				setUser(JSON.parse(cached));
-			} catch {}
-		}
 		fetchProfile().finally(() => setLoading(false));
 	}, []);
 
 	const login = async (username: string, password: string) => {
 		try {
 			const res = await api.post("/auth/login", { username, password });
-			localStorage.setItem("token", res.data.access_token);
-			localStorage.setItem("user", JSON.stringify(res.data.user));
 			setUser(res.data.user);
 			return { success: true };
 		} catch (e: any) {
@@ -84,7 +68,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		try {
 			const res = await api.put("/auth/profile", data);
 			setUser(res.data.user);
-			localStorage.setItem("user", JSON.stringify(res.data.user));
 			return { success: true };
 		} catch (e: any) {
 			return {

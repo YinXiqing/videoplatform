@@ -3,12 +3,12 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, or_, func, update
+from sqlalchemy import select, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.deps import get_db, require_admin
 from app.models import User, Video
-from app.routes.video.helpers import _delete_video
+from app.routes.video.helpers import _delete_video, paginate
 
 router = APIRouter(tags=["admin"])
 
@@ -22,10 +22,9 @@ async def get_all_videos(page: int = 1, per_page: int = Query(20, le=100), statu
     if search:
         pat = f"%{search}%"
         q = q.join(User).where(or_(Video.title.ilike(pat), Video.description.ilike(pat), User.username.ilike(pat)))
-    total = (await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar_one()
-    items = (await db.execute(q.order_by(Video.created_at.desc()).offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    items, total, pages = await paginate(db, q.order_by(Video.created_at.desc()), page, per_page)
     return {"videos": [v.to_dict() for v in items], "total": total,
-            "pages": -(-total // per_page), "current_page": page, "per_page": per_page}
+            "pages": pages, "current_page": page, "per_page": per_page}
 
 
 class VideoAdminUpdate(BaseModel):

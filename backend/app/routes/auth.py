@@ -1,14 +1,16 @@
 import re, asyncio, secrets
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
-from jose import jwt
+import jwt
 from pydantic import BaseModel
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+import cachetools
 from app.deps import get_db, get_current_user
 from app.models import User
 from app.logger import logger
 from config import settings
+from app.limiter import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -32,6 +34,7 @@ class ProfileUpdate(BaseModel):
     password: str | None = None
 
 @router.post("/register", status_code=201)
+@limiter.limit("3/minute")
 async def register(request: Request, data: RegisterIn, db: AsyncSession = Depends(get_db)):
     username = data.username.strip()
     email = data.email.strip().lower()
@@ -39,8 +42,10 @@ async def register(request: Request, data: RegisterIn, db: AsyncSession = Depend
         raise HTTPException(400, "用户名长度必须在 3-80 个字符之间")
     if not EMAIL_RE.match(email):
         raise HTTPException(400, "邮箱格式不正确")
-    if len(data.password) < 6:
-        raise HTTPException(400, "密码长度至少为 6 个字符")
+    if len(data.password) < 8:
+        raise HTTPException(400, "密码长度至少为 8 个字符")
+    if not re.search(r'[a-zA-Z]', data.password) or not re.search(r'\d', data.password):
+        raise HTTPException(400, "密码必须包含字母和数字")
 
     existing = await db.execute(select(User).where(or_(User.username == username, User.email == email)))
     if existing.scalar_one_or_none():
@@ -55,6 +60,7 @@ async def register(request: Request, data: RegisterIn, db: AsyncSession = Depend
     return {"message": "User registered successfully", "user": user.to_dict()}
 
 @router.post("/login")
+@limiter.limit("5/minute")
 async def login(request: Request, response: Response, data: LoginIn, db: AsyncSession = Depends(get_db)):
     ident = data.username.strip()
     result = await db.execute(select(User).where(or_(User.username == ident, User.email == ident)))
@@ -83,7 +89,11 @@ async def get_profile(user: User = Depends(get_current_user)):
     return {"user": user.to_dict()}
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
+    from app.deps import revoke_token
+    token = request.cookies.get("access_token")
+    if token:
+        revoke_token(token)
     response.delete_cookie(key="access_token")
     return {"message": "Logged out successfully"}
 
@@ -114,12 +124,20 @@ class ResetPasswordIn(BaseModel):
     token: str
     password: str
 
+# 邮箱发送限流：同一邮箱 1 次/分钟
+_email_send_cache = cachetools.TTLCache(maxsize=10000, ttl=60)
+
 @router.post("/forgot-password")
+@limiter.limit("3/minute")
 async def forgot_password(request: Request, data: ForgotPasswordIn, db: AsyncSession = Depends(get_db)):
     from app.models import PasswordResetToken
     from sqlalchemy import delete as sa_delete
 
     email = data.email.strip().lower()
+    if email in _email_send_cache:
+        return {"message": "如果该邮箱已注册，重置链接已发送"}
+    _email_send_cache[email] = True
+
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     # 无论用户是否存在都返回相同响应，防止枚举攻击
     if not user:
@@ -164,8 +182,8 @@ async def forgot_password(request: Request, data: ForgotPasswordIn, db: AsyncSes
 async def reset_password(data: ResetPasswordIn, db: AsyncSession = Depends(get_db)):
     from app.models import PasswordResetToken
 
-    if len(data.password) < 6:
-        raise HTTPException(400, "密码长度至少为 6 个字符")
+    if len(data.password) < 8:
+        raise HTTPException(400, "密码长度至少为 8 个字符")
 
     record = (await db.execute(
         select(PasswordResetToken).where(PasswordResetToken.token == data.token, PasswordResetToken.used == False)

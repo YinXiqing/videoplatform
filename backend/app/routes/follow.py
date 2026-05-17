@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.deps import get_db, get_current_user, get_optional_user
 from app.models import Follow, User, Video
 from app.logger import logger
+from app.routes.video.helpers import paginate
 
 router = APIRouter(prefix="/api/follow", tags=["follow"])
 
@@ -61,15 +62,22 @@ async def follow_count(user_id: int, db: AsyncSession = Depends(get_db)):
 async def list_following(db: AsyncSession = Depends(get_db),
                           user: User = Depends(get_current_user)):
     """获取当前用户关注的作者列表"""
-    follows = (await db.execute(
-        select(Follow).where(Follow.follower_id == user.id).order_by(Follow.created_at.desc())
+    followed_ids = (await db.execute(
+        select(Follow.followed_id).where(Follow.follower_id == user.id)
+        .order_by(Follow.created_at.desc())
     )).scalars().all()
 
-    result = []
-    for f in follows:
-        followed_user = await db.get(User, f.followed_id)
-        if followed_user:
-            result.append({"id": followed_user.id, "username": followed_user.username})
+    if not followed_ids:
+        return {"users": []}
+
+    users = (await db.execute(
+        select(User.id, User.username).where(User.id.in_(followed_ids))
+    )).all()
+    id_order = {uid: i for i, uid in enumerate(followed_ids)}
+    result = sorted(
+        [{"id": uid, "username": uname} for uid, uname in users],
+        key=lambda x: id_order.get(x["id"], 9999),
+    )
     return {"users": result}
 
 
@@ -90,7 +98,6 @@ async def subscription_feed(page: int = 1, per_page: int = 12,
          .where(Video.user_id.in_(follows), Video.status == "approved")
          .order_by(Video.created_at.desc()))
 
-    total = (await db.execute(select(func.count()).select_from(q.order_by(None).subquery()))).scalar_one()
-    items = (await db.execute(q.offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    items, total, pages = await paginate(db, q, page, per_page)
     return {"videos": [v.to_dict() for v in items], "total": total,
-            "pages": -(-total // per_page), "current_page": page}
+            "pages": pages, "current_page": page}

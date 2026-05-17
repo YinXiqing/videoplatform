@@ -1,12 +1,12 @@
 """管理后台：抓取、下载、导入、代理"""
 
-import uuid, asyncio, json, shutil, re as _re
+import uuid, asyncio, json, shutil
 from typing import Optional
-from imageio_ffmpeg import get_ffmpeg_exe
+from app.routes.video.helpers import get_ffmpeg_exe, _get_session, paginate, _ydlp_extract
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
 from pydantic import BaseModel
-from sqlalchemy import select, or_, func, update, delete
+from sqlalchemy import select, or_, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 import aiohttp, aiofiles
 from app.deps import get_db, require_admin
@@ -20,43 +20,8 @@ router = APIRouter(tags=["admin"])
 
 # ── 抓取 ──
 
-
-def _ydlp_extract(url):
-    import yt_dlp
-    ydl_opts = {
-        "quiet": True, "no_warnings": True, "skip_download": True,
-        "noplaylist": True, "socket_timeout": 20,
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
-        "extractor_args": {"youtube": {"skip": ["dash"]}},
-    }
-    if settings.YT_PROXY:
-        ydl_opts["proxy"] = settings.YT_PROXY
-    if settings.YT_COOKIES_FILE:
-        ydl_opts["cookiefile"] = settings.YT_COOKIES_FILE
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-    title = _re.sub(r"\s*\(\d+\)$", "", info.get("title", "") or "").strip() or "Untitled"
-    cover_url = info.get("thumbnail", "")
-    duration = int(info.get("duration") or 0)
-    fmts = info.get("formats", [])
-    m3u8 = [f for f in fmts if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("url") and f.get("vcodec") != "none"]
-    direct = [f for f in fmts if f.get("url") and f.get("vcodec") not in (None, "none")]
-    video_url = (
-        max(m3u8, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))["url"] if m3u8
-        else max(direct, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))["url"] if direct
-        else info.get("url", "")
-    )
-    best_fmt = (
-        max(m3u8, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if m3u8
-        else max(direct, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0)) if direct
-        else {}
-    )
-    http_headers = best_fmt.get("http_headers", {}) if best_fmt else {}
-    if url not in http_headers.get("Referer", ""):
-        http_headers["Referer"] = url
-    if video_url.endswith(".m3u") and not video_url.endswith(".m3u8"):
-        video_url += "8"
-    return title, cover_url, video_url, duration, http_headers, bool(m3u8)
+SCRAPE_FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+SCRAPE_EXTRACTOR_ARGS = {"youtube": {"skip": ["dash"]}}
 
 
 async def _download_cover(scraped_id: int, cover_url: str, source_url: str) -> str | None:
@@ -67,15 +32,15 @@ async def _download_cover(scraped_id: int, cover_url: str, source_url: str) -> s
         if ext not in ("jpg", "jpeg", "png", "webp"):
             ext = "jpg"
         fname = f"cover_{scraped_id}.{ext}"
-        async with aiohttp.ClientSession() as s:
-            async with s.get(cover_url,
-                             headers={"User-Agent": "Mozilla/5.0", "Referer": source_url or cover_url},
+        async with _get_session().get(cover_url,
+                             headers={"Referer": source_url or cover_url},
                              ssl=False) as r:
                 content = await r.read()
         async with aiofiles.open(settings.UPLOAD_FOLDER / fname, "wb") as f:
             await f.write(content)
         return fname
-    except Exception:
+    except Exception as e:
+        logger.warning("download_cover_failed", scraped_id=scraped_id, error=str(e))
         return None
 
 
@@ -92,7 +57,8 @@ async def scrape_video(data: ScrapeIn, db: AsyncSession = Depends(get_db),
         raise HTTPException(409, "该 URL 已抓取过")
     loop = asyncio.get_running_loop()
     try:
-        title, cover_url, video_url, duration, http_headers, is_m3u8 = await loop.run_in_executor(None, _ydlp_extract, url)
+        title, cover_url, duration, video_url, http_headers, is_m3u8 = await loop.run_in_executor(
+            None, _ydlp_extract, url, SCRAPE_FORMAT, SCRAPE_EXTRACTOR_ARGS)
     except Exception as e:
         raise HTTPException(500, f"抓取失败: {e}")
 
@@ -132,12 +98,14 @@ async def scrape_videos_batch(data: BatchScrapeIn, db: AsyncSession = Depends(ge
     async def scrape_one(url: str):
         async with sem:
             try:
-                title, cover_url, video_url, duration, http_headers, is_m3u8 = await loop.run_in_executor(None, _ydlp_extract, url)
+                title, cover_url, duration, video_url, http_headers, is_m3u8 = await loop.run_in_executor(
+                    None, _ydlp_extract, url, SCRAPE_FORMAT, SCRAPE_EXTRACTOR_ARGS)
                 return ScrapedVideoInfo(source_url=url, title=title, description="",
                                         video_url=video_url, cover_url=cover_url, duration=duration, tags="",
                                         http_headers=json.dumps(http_headers) if http_headers else None,
                                         is_m3u8=is_m3u8)
-            except Exception:
+            except Exception as e:
+                logger.warning("batch_scrape_one_failed", url=url[:120], error=str(e))
                 return None
 
     results = await asyncio.gather(*[scrape_one(u) for u in urls])
@@ -158,8 +126,7 @@ async def get_scraped_videos(page: int = 1, per_page: int = Query(20, le=100), s
     q = select(ScrapedVideoInfo)
     if status != "all":
         q = q.where(ScrapedVideoInfo.status == status)
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
-    items = (await db.execute(q.order_by(ScrapedVideoInfo.scraped_at.desc()).offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    items, total, pages = await paginate(db, q.order_by(ScrapedVideoInfo.scraped_at.desc()), page, per_page)
     return {"scraped_videos": [{
         "id": v.id, "source_url": v.source_url, "title": v.title,
         "description": v.description, "cover_url": v.cover_url,
@@ -169,7 +136,7 @@ async def get_scraped_videos(page: int = 1, per_page: int = Query(20, le=100), s
         "download_progress": v.download_progress, "local_filename": v.local_filename,
         "is_m3u8": v.is_m3u8, "video_id": v.video_id,
     } for v in items],
-        "total": total, "pages": -(-total // per_page), "current_page": page, "per_page": per_page}
+        "total": total, "pages": pages, "current_page": page, "per_page": per_page}
 
 
 class ImportIn(BaseModel):
@@ -276,9 +243,16 @@ async def _do_download(scraped_id: int, source_url: str):
         await set_state(0, "failed")
 
 
+def _on_bg_task_done(t: asyncio.Task):
+    if t.exception():
+        logger.warning("bg_task_failed", error=str(t.exception()))
+
 @router.post("/scraped/{scraped_id}/download")
 async def start_download(scraped_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
-    scraped = await db.get(ScrapedVideoInfo, scraped_id)
+    # SELECT FOR UPDATE 防止并发重复启动
+    scraped = (await db.execute(
+        select(ScrapedVideoInfo).where(ScrapedVideoInfo.id == scraped_id).with_for_update()
+    )).scalar_one_or_none()
     if not scraped:
         raise HTTPException(404)
     if scraped.download_status == "downloading":
@@ -289,7 +263,8 @@ async def start_download(scraped_id: int, db: AsyncSession = Depends(get_db), _:
     scraped.download_progress = 0
     await db.commit()
     from app.tasks import download_scraped_video
-    asyncio.create_task(download_scraped_video(scraped_id, scraped.source_url))
+    task = asyncio.create_task(download_scraped_video(scraped_id, scraped.source_url))
+    task.add_done_callback(_on_bg_task_done)
     return {"message": "下载任务已启动"}
 
 
@@ -402,7 +377,8 @@ async def batch_download_scraped(data: BatchIds, db: AsyncSession = Depends(get_
         s.download_status = "downloading"
         s.download_progress = 0
         from app.tasks import download_scraped_video
-        asyncio.create_task(download_scraped_video(s.id, s.source_url))
+        task = asyncio.create_task(download_scraped_video(s.id, s.source_url))
+        task.add_done_callback(_on_bg_task_done)
         started += 1
     await db.commit()
     return {"message": f"已启动 {started} 个下载任务", "started": started}
@@ -423,8 +399,7 @@ async def proxy_m3u8(url: str, _: User = Depends(require_admin)):
     import urllib.parse
     proxy = settings.YT_PROXY
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers={"User-Agent": "Mozilla/5.0", "Referer": url},
+        async with _get_session().get(url, headers={"Referer": url},
                                    proxy=proxy, ssl=False, timeout=aiohttp.ClientTimeout(total=15)) as r:
                 content_type = r.headers.get("Content-Type", "application/octet-stream")
                 body = await r.read()
@@ -444,4 +419,15 @@ async def proxy_m3u8(url: str, _: User = Depends(require_admin)):
         return Response(content=body, media_type=content_type,
                         headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"})
     except Exception as e:
+        logger.warning("admin_proxy_failed", url=url[:120], error=str(e))
         raise HTTPException(502, f"代理请求失败: {e}")
+
+
+@router.get("/scraped/{scraped_id}/hls/{filename}")
+async def serve_scraped_hls(scraped_id: int, filename: str, _: User = Depends(require_admin)):
+    """下载完成后的 HLS 预览（import 前）"""
+    path = settings.UPLOAD_FOLDER / "hls" / str(scraped_id) / filename
+    if not path.exists():
+        raise HTTPException(404)
+    ct = "application/vnd.apple.mpegurl" if filename.endswith(".m3u8") else "video/mp2t"
+    return FileResponse(path, media_type=ct)

@@ -11,6 +11,16 @@ router = APIRouter(tags=["ws"])
 _connections: dict[str, list[WebSocket]] = {}
 
 
+async def _heartbeat(ws: WebSocket, interval: int = 30):
+    """发送心跳 ping，保持连接存活"""
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await ws.send_json({"type": "ping"})
+        except Exception:
+            break
+
+
 async def notify(task_id: str, data: dict):
     """向订阅了该 task_id 的所有客户端推送消息"""
     if task_id not in _connections:
@@ -31,11 +41,20 @@ async def notify(task_id: str, data: dict):
 async def progress_ws(websocket: WebSocket, task_id: str):
     await websocket.accept()
     _connections.setdefault(task_id, []).append(websocket)
+    heartbeat_task = asyncio.create_task(_heartbeat(websocket))
     try:
         while True:
-            # 保持连接，等待客户端断开
-            await websocket.receive_text()
-    except WebSocketDisconnect:
+            data = await asyncio.wait_for(websocket.receive_text(), timeout=60)
+            try:
+                msg = json.loads(data)
+                if msg.get("type") == "pong":
+                    continue
+            except (json.JSONDecodeError, TypeError):
+                pass
+    except (WebSocketDisconnect, asyncio.TimeoutError):
+        pass
+    finally:
+        heartbeat_task.cancel()
         if task_id in _connections:
             _connections[task_id].remove(websocket)
             if not _connections[task_id]:

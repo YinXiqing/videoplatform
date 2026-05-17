@@ -12,8 +12,10 @@ from app.deps import get_db, get_current_user, get_optional_user
 from app.models import Video, WatchHistory, User
 from config import settings
 from app.routes.video.helpers import (
-    _check_url, _get_fresh_url, _ip_view_cache, BLOCKED,
+    _check_url, _get_fresh_url, _ip_view_cache, BLOCKED, _get_session,
+    _is_private_ip, _cache_remote_cover,
 )
+from app.logger import logger
 
 router = APIRouter(tags=["video"])
 
@@ -43,15 +45,10 @@ async def stream_video(request: Request, video_id: int, db: AsyncSession = Depen
         forwarded = request.headers.get("X-Forwarded-For", "")
         ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
         key = (ip, video_id)
-        now = _time.time()
-        if key in _ip_view_cache and now - _ip_view_cache[key] < 3600:
+        if key in _ip_view_cache:
             should_count = False
         else:
-            _ip_view_cache[key] = now
-            if len(_ip_view_cache) > 10000:
-                cutoff = now - 3600
-                for k in [k for k, v in _ip_view_cache.items() if v < cutoff]:
-                    del _ip_view_cache[k]
+            _ip_view_cache[key] = True
     if should_count:
         await db.execute(update(Video).where(Video.id == video_id).values(view_count=Video.view_count + 1))
         await db.commit()
@@ -76,7 +73,8 @@ async def serve_file(video_id: int, db: AsyncSession = Depends(get_db),
     path = settings.UPLOAD_FOLDER / video.filename
     if not path.exists():
         raise HTTPException(404)
-    return FileResponse(path, media_type="video/mp4")
+    return FileResponse(path, media_type="video/mp4",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/hls/{video_id}/{filename}")
@@ -92,27 +90,36 @@ async def serve_hls(video_id: int, filename: str, db: AsyncSession = Depends(get
     if not path.exists():
         raise HTTPException(404)
     ct = "application/vnd.apple.mpegurl" if filename.endswith(".m3u8") else "video/mp2t"
-    return FileResponse(path, media_type=ct)
+    return FileResponse(path, media_type=ct,
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @router.get("/cover/{video_id}")
-async def get_cover(video_id: int, db: AsyncSession = Depends(get_db)):
+async def get_cover(video_id: int, db: AsyncSession = Depends(get_db),
+                    user: Optional[User] = Depends(get_optional_user)):
     video = await db.get(Video, video_id)
     if not video or not video.cover_image:
         raise HTTPException(404)
+    if video.status != "approved":
+        if not user or (user.id != video.user_id and user.role != "admin"):
+            raise HTTPException(404)
     if video.cover_image.startswith("http"):
+        local = await _cache_remote_cover(video.cover_image, video.page_url or video.cover_image)
+        if not local.startswith("http"):
+            return FileResponse(settings.UPLOAD_FOLDER / local,
+                                headers={"Cache-Control": "public, max-age=86400"})
         async def _gen():
             try:
                 referer = video.page_url or video.cover_image
-                async with aiohttp.ClientSession() as s:
-                    async with s.get(video.cover_image,
+                async with _get_session().get(video.cover_image,
                                      headers={"User-Agent": "Mozilla/5.0", "Referer": referer},
                                      ssl=False, timeout=aiohttp.ClientTimeout(total=10)) as r:
                         if r.status >= 400:
                             return
                         async for chunk in r.content.iter_chunked(8192):
                             yield chunk
-            except Exception:
+            except Exception as e:
+                logger.warning("cover_stream_failed", video_id=video_id, error=str(e))
                 return
         ct = "image/jpeg"
         if video.cover_image.split("?")[0].endswith(".png"):
@@ -123,7 +130,7 @@ async def get_cover(video_id: int, db: AsyncSession = Depends(get_db)):
     path = settings.UPLOAD_FOLDER / video.cover_image
     if not path.exists():
         raise HTTPException(404)
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/download/{video_id}")
@@ -143,7 +150,8 @@ async def download_video(video_id: int, db: AsyncSession = Depends(get_db),
     from urllib.parse import quote
     disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
     return FileResponse(path, media_type="video/mp4",
-                        headers={"Content-Disposition": disposition})
+                        headers={"Content-Disposition": disposition,
+                                 "Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/refresh-url/{video_id}")
@@ -167,7 +175,9 @@ async def proxy_stream(url: str, referer: str = "", db: AsyncSession = Depends(g
     from urllib.parse import urlparse, urljoin, urlunparse
     try:
         p = urlparse(url)
-        if not p.hostname or BLOCKED.match(p.hostname) or p.scheme not in ("http", "https"):
+        if not p.hostname or p.scheme not in ("http", "https"):
+            raise HTTPException(403, "已阻止")
+        if BLOCKED.match(p.hostname) or _is_private_ip(p.hostname):
             raise HTTPException(403, "已阻止")
     except HTTPException:
         raise
@@ -179,8 +189,8 @@ async def proxy_stream(url: str, referer: str = "", db: AsyncSession = Depends(g
         video = (await db.execute(select(Video).where(Video.source_url == url))).scalars().first()
         if video and video.http_headers:
             stored_headers = json.loads(video.http_headers)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("proxy_headers_parse_failed", url=url[:120], error=str(e))
 
     effective_referer = referer or stored_headers.get("Referer") or f"{p.scheme}://{p.netloc}/"
     user_agent = stored_headers.get("User-Agent") or \
@@ -189,8 +199,7 @@ async def proxy_stream(url: str, referer: str = "", db: AsyncSession = Depends(g
 
     async def _gen():
         try:
-            async with aiohttp.ClientSession() as s:
-                async with s.get(url, headers=req_headers, ssl=False) as r:
+            async with _get_session().get(url, headers=req_headers, ssl=False) as r:
                     if r.status >= 400:
                         return
                     ct = r.headers.get("Content-Type", "")
@@ -209,7 +218,8 @@ async def proxy_stream(url: str, referer: str = "", db: AsyncSession = Depends(g
                     else:
                         async for chunk in r.content.iter_chunked(8192):
                             yield chunk
-        except Exception:
+        except Exception as e:
+            logger.warning("proxy_stream_failed", url=url[:120], error=str(e))
             return
 
     ct = "application/vnd.apple.mpegurl" if ".m3u8" in url else "application/octet-stream"

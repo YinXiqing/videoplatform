@@ -2,7 +2,7 @@ import os
 import uvicorn
 from app.logger import setup_logging
 
-setup_logging()
+setup_logging(sql=os.environ.get("LOG_SQL", "").lower() in ("1", "true"))
 
 from app import create_app
 

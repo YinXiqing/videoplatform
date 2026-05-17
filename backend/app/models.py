@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Integer, String, Text, Boolean, BigInteger, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Integer, String, Text, Boolean, BigInteger, DateTime, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import bcrypt as _bcrypt
 from app.database import Base
@@ -62,7 +62,22 @@ class Video(Base):
 
     author_rel: Mapped["User"] = relationship("User", back_populates="videos")
 
+    __table_args__ = (
+        Index("ix_video_title_trgm", "title", postgresql_using="gin",
+              postgresql_ops={"title": "gin_trgm_ops"}),
+        Index("ix_video_tags_trgm", "tags", postgresql_using="gin",
+              postgresql_ops={"tags": "gin_trgm_ops"}),
+        Index("ix_video_status_created", "status", "created_at"),
+    )
+
     def to_dict(self):
+        if self.is_scraped and self.source_url:
+            play_url = self.source_url  # 外链视频直接用源 URL（经 proxy 播放）
+        elif self.hls_ready:
+            play_url = f"/api/video/hls/{self.id}/index.m3u8"
+        else:
+            play_url = f"/api/video/file/{self.id}"
+
         return {
             "id": self.id, "title": self.title, "description": self.description,
             "tags": self.tags.split(",") if self.tags else [],
@@ -71,7 +86,8 @@ class Video(Base):
             "status": self.status, "view_count": self.view_count,
             "user_id": self.user_id,
             "author": self.author_rel.username if self.author_rel else None,
-            "source_url": self.source_url, "video_url": self.source_url,
+            "source_url": self.source_url,
+            "video_url": play_url,
             "page_url": self.page_url, "is_scraped": self.is_scraped,
             "http_headers": self.http_headers,
             "hls_ready": self.hls_ready,
@@ -96,9 +112,14 @@ class WatchHistory(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     video_id: Mapped[int] = mapped_column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
-    watched_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), index=True)
+    watched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
     video: Mapped["Video"] = relationship("Video", lazy="select")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "video_id", name="uq_user_video_watch"),
+        Index("ix_watch_history_user_video_time", "user_id", "video_id", "watched_at"),
+    )
 
 
 class Favorite(Base):
@@ -107,21 +128,11 @@ class Favorite(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     video_id: Mapped[int] = mapped_column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     video: Mapped["Video"] = relationship("Video", lazy="select")
 
-
-class VideoLike(Base):
-    __tablename__ = "video_likes"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    video_id: Mapped[int] = mapped_column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
-    type: Mapped[str] = mapped_column(String(10), nullable=False)  # "like" or "dislike"
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
-
-    __table_args__ = (UniqueConstraint("user_id", "video_id", name="uq_user_video_like"),)
+    __table_args__ = (UniqueConstraint("user_id", "video_id", name="uq_user_video_favorite"),)
 
 
 class Follow(Base):
@@ -130,7 +141,9 @@ class Follow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     follower_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     followed_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (UniqueConstraint("follower_id", "followed_id", name="uq_follow"),)
 
 
 class ScrapedVideoInfo(Base):

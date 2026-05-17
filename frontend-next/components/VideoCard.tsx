@@ -31,6 +31,7 @@ function VideoCard({
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const hlsRef = useRef<any>(null);
 	const loadedRef = useRef(false);
+	const isHoveredRef = useRef(false);
 
 	// IntersectionObserver: 卡片进入/离开视口（提前 150px 触发）
 	useEffect(() => {
@@ -46,9 +47,9 @@ function VideoCard({
 
 	// 进入视口后预加载 HLS，解码一帧后暂停
 	useEffect(() => {
-		if (!isHovered || !inViewport || hlsError || !video.hls_ready) return;
+		if (!inViewport || hlsError || !video.hls_ready) return;
 		const el = videoRef.current;
-		if (!el) return;
+		if (!el || loadedRef.current) return;
 
 		const src = `/api/video/hls/${video.id}/index.m3u8`;
 
@@ -81,6 +82,7 @@ function VideoCard({
 				el.currentTime = 0;
 				loadedRef.current = true;
 				setVideoLoaded(true);
+				if (isHoveredRef.current) el.play().catch(() => {});
 			};
 			el.addEventListener("playing", onPlaying);
 
@@ -103,6 +105,7 @@ function VideoCard({
 				el.currentTime = 0;
 				loadedRef.current = true;
 				setVideoLoaded(true);
+				if (isHoveredRef.current) el.play().catch(() => {});
 			};
 			el.addEventListener("loadeddata", onLoaded);
 			return () => {
@@ -118,6 +121,7 @@ function VideoCard({
 
 	const handleEnter = () => {
 		if (window.matchMedia("(hover: none)").matches) return;
+		isHoveredRef.current = true;
 		setIsHovered(true);
 		const el = videoRef.current;
 		if (el && loadedRef.current) {
@@ -127,6 +131,7 @@ function VideoCard({
 	};
 
 	const handleLeave = () => {
+		isHoveredRef.current = false;
 		setIsHovered(false);
 		const el = videoRef.current;
 		if (el) {
@@ -161,6 +166,7 @@ function VideoCard({
 						muted
 						loop
 						playsInline
+					preload="metadata"
 						className="absolute inset-0 w-full h-full object-cover"
 						onTimeUpdate={handleTimeUpdate}
 					/>

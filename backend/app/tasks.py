@@ -1,6 +1,5 @@
 """后台任务定义（转码、下载、URL 刷新）"""
 
-from imageio_ffmpeg import get_ffmpeg_exe
 import asyncio
 import json
 import shutil
@@ -8,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from app.logger import logger
+from app.routes.video.helpers import get_ffmpeg_exe
 from config import settings
 
 
